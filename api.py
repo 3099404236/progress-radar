@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, date
 import config
 import data_store
 import ai_processor
+import achievement_store
+import achievement_checker
 
 log = logging.getLogger("progressradar.api")
 
@@ -27,6 +29,28 @@ def _heat_grid(entries, days=35):
             continue
         counts[d] = counts.get(d, 0) + 1
     return [counts.get(start + timedelta(days=i), 0) for i in range(days)]
+
+
+def _summarize_block(block):
+    """成就块概览（每个维度页 + 全局都需要）"""
+    ms = block.get("milestones", [])
+    ins = block.get("insights", [])
+    cust = block.get("custom", [])
+    unlocked_ms = [m for m in ms if m.get("unlocked_at")]
+    unlocked_cust = [c for c in cust if c.get("unlocked_at")]
+    next_locked = next((m for m in ms if not m.get("unlocked_at")), None)
+    return {
+        "milestones": ms,
+        "insights": ins,
+        "custom": cust,
+        "milestone_unlocked": len(unlocked_ms),
+        "milestone_total": len(ms),
+        "insight_unlocked": len(ins),
+        "custom_unlocked": len(unlocked_cust),
+        "custom_total": len(cust),
+        "total_unlocked": len(unlocked_ms) + len(ins) + len(unlocked_cust),
+        "next_milestone": next_locked,
+    }
 
 
 class API:
@@ -63,6 +87,15 @@ class API:
                     del seen[: len(seen) - 500]
 
             data_store.save(data)
+
+            if result.get("status") == "ok" and result.get("action") in ("update", "create"):
+                try:
+                    newly, _ = achievement_checker.check(data, result.get("dimension_id"))
+                    if newly:
+                        result["unlocked"] = newly
+                except Exception:
+                    log.exception("成就检查失败")
+
             return json.dumps(result, ensure_ascii=False)
         except Exception as e:
             log.exception("submit 崩溃")
@@ -85,6 +118,10 @@ class API:
     def get_dimensions(self, cycle_filter="current"):
         """cycle_filter: 'current' | 'all'"""
         data = data_store.load()
+        try:
+            ach = achievement_store.load(data)
+        except Exception:
+            ach = {"per_dimension": {}, "global": {}}
         dims_out = []
         for dim_id, dim in data["dimensions"].items():
             entries = dim.get("entries", [])
@@ -95,7 +132,7 @@ class API:
                 visible = entries
 
             recent_entries = []
-            for e in reversed(visible[-10:]):
+            for e in reversed(visible):
                 ts = e.get("timestamp", "")
                 try:
                     mmdd = datetime.fromisoformat(ts).strftime("%m/%d")
@@ -108,6 +145,19 @@ class API:
                     "phase_index": e.get("phase_index", 0),
                     "cycle": e.get("cycle", 1),
                 })
+
+            block = ach.get("per_dimension", {}).get(dim_id, {})
+            ach_summary = _summarize_block(block)
+
+            stats = {
+                "total_entries": len(visible),
+                "all_total": len(entries),
+                "active_days": achievement_checker.calc_active_days(visible),
+                "max_streak": achievement_checker.calc_max_streak(visible),
+                "current_streak": achievement_checker.calc_streak(visible),
+                "span_days": achievement_checker.calc_span_days(visible),
+                "this_week": sum(1 for v in _heat_grid(visible, 35)[-7:] if v),
+            }
 
             dims_out.append({
                 "id": dim_id,
@@ -122,11 +172,14 @@ class API:
                 "cycles": dim.get("cycles", []),
                 "phase_versions": dim.get("phase_versions", []),
                 "entries": recent_entries,
+                "stats": stats,
                 "total_entries": len(visible),
                 "all_total": len(entries),
                 "heat": _heat_grid(visible),
+                "heat_90": _heat_grid(visible, 90),
                 "created_by": dim.get("created_by", "preset"),
                 "milestones": dim.get("milestones", []),
+                "achievements": ach_summary,
             })
         meta = data.get("meta", {})
         return json.dumps({
@@ -136,6 +189,7 @@ class API:
                 "last_updated": meta.get("last_updated"),
                 "cycle_filter": cycle_filter,
             },
+            "global_achievements": _summarize_block(ach.get("global", {})),
         }, ensure_ascii=False)
 
     def get_weekly_report(self):
@@ -194,6 +248,44 @@ class API:
         if self._main_window:
             self._main_window.hide()
         return json.dumps({"ok": True})
+
+    # ---------- 成就 ----------
+
+    def get_achievements(self):
+        try:
+            data = data_store.load()
+            ach = achievement_store.load(data)
+            return json.dumps({"status": "ok", "data": ach}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("get_achievements 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    def create_custom_achievement(self, dimension_id, title, condition_text, rarity="rare"):
+        try:
+            data = data_store.load()
+            item = achievement_checker.add_custom(dimension_id, title, condition_text, rarity, data)
+            return json.dumps({"status": "ok", "item": item}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("create_custom_achievement 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    def unlock_custom_achievement(self, dimension_id, title):
+        try:
+            item = achievement_checker.unlock_custom(dimension_id, title)
+            return json.dumps({"status": "ok", "item": item}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("unlock_custom 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    def recheck_achievements(self):
+        """手动重算所有成就（调试 / 修复用）"""
+        try:
+            data = data_store.load()
+            newly, _ = achievement_checker.check(data, None)
+            return json.dumps({"status": "ok", "unlocked": newly}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("recheck 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     # ---------- 手动编辑 ----------
 

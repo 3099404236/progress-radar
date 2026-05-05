@@ -10,6 +10,8 @@ from openai import OpenAI
 
 import config
 import data_store
+import achievement_store
+import achievement_checker
 
 log = logging.getLogger("progressradar.ai")
 
@@ -84,14 +86,22 @@ cycle_event = {{"type":"new_cycle","reason":"...","new_cycle_number":N,"reset_pr
 ### 第七步：下一步建议
 - 1-3个具体可执行的下一步
 
+### 第八步：维度专属洞察成就（高度可选，绝大多数 update 应为 null）⭐
+- 每个维度有自己的"洞察"成就池。如果本次提交在所属维度内代表一个真正的转折点（不是普通进展），才颁发
+- 类型参考：方法突破 / 质量跃迁 / 关键发现 / 瓶颈突破 / 意外连接
+- title: 4-6 字中文短语；description: 一句话说原因
+- rarity: common（小亮点）/ uncommon（明显进步）/ rare（突破）/ epic（罕见里程碑）
+- 已颁发过的洞察会列在维度摘要里，**绝对不要换汤不换药地重复**
+- create 维度时也可以附 achievement，对"开新方向"这类标记有意义
+
 ## 输出格式
 严格 JSON，以下场景之一：
 
 A. 匹配已有维度 → update：
-{{"action":"update","dimension_id":"...","summary":"...","key_progress":["..."],"tag":"...","phase_index":N,"progress_delta":"...","next_steps":["..."],"cross_dimensions":[],"cycle_event":null}}
+{{"action":"update","dimension_id":"...","summary":"...","key_progress":["..."],"tag":"...","phase_index":N,"progress_delta":"...","next_steps":["..."],"cross_dimensions":[],"cycle_event":null,"achievement":null}}
 
 B. 创建新维度 → create：
-{{"action":"create","dimension_id":"snake_case","dimension_label":"中文标签","reason":"为什么不属于已有维度","phases":[{{"name":"...","desc":"..."}}],"initial_phase_index":0,"summary":"...","key_progress":["..."],"tag":"...","next_steps":["..."]}}
+{{"action":"create","dimension_id":"snake_case","dimension_label":"中文标签","reason":"为什么不属于已有维度","phases":[{{"name":"...","desc":"..."}}],"initial_phase_index":0,"summary":"...","key_progress":["..."],"tag":"...","next_steps":["..."],"achievement":null}}
 
 C. 阶段演化 → evolve：
 {{"action":"evolve","dimension_id":"...","reason":"...","current_phases":["..."],"proposed_phases":[{{"name":"...","desc":"..."}}],"entry_remapping":[{{"old_phase":N,"new_phase":M}}],"summary":"...","key_progress":["..."],"tag":"...","phase_index_after_evolve":N}}
@@ -109,6 +119,10 @@ def _build_dimensions_summary(data):
     dims = data.get("dimensions", {})
     if not dims:
         return "（暂无维度，首次使用）"
+    try:
+        ach = achievement_store.load(data)
+    except Exception:
+        ach = {"per_dimension": {}}
     lines = []
     for dim_id, dim in dims.items():
         phases = [p["name"] for p in dim.get("phases", [])]
@@ -120,12 +134,16 @@ def _build_dimensions_summary(data):
         activity_str = "/".join(str(a) for a in activity) if activity else "—"
         recent_phases = dim.get("recent_phases", [])
         cycle = dim.get("current_cycle", 1)
+        block = ach.get("per_dimension", {}).get(dim_id, {})
+        insights = [i.get("title", "") for i in block.get("insights", [])]
+        ins_str = ("已颁发洞察: " + "/".join(insights)) if insights else "无洞察"
         lines.append(
             f"- {dim_id} ({dim['label']}) [周期{cycle}]: "
             f"阶段路径=[{' / '.join(phases)}], "
             f"主阶段={primary+1}[{primary_name}], "
             f"分布={activity_str}, "
             f"近5条阶段={recent_phases}. "
+            f"{ins_str}. "
             f"最近: {recent_text}"
         )
     return "\n".join(lines)
@@ -329,6 +347,24 @@ def stash_confirm(data, result, original_text):
     }
 
 
+def _maybe_grant_insight(dim_id, ai_result, progress_data):
+    ach = ai_result.get("achievement")
+    if not ach or not isinstance(ach, dict):
+        return None
+    title = (ach.get("title") or "").strip()
+    desc = (ach.get("description") or "").strip()
+    if not title or not desc:
+        return None
+    rarity = ach.get("rarity", "uncommon")
+    if rarity not in ("common", "uncommon", "rare", "epic", "legendary"):
+        rarity = "uncommon"
+    try:
+        return achievement_checker.add_insight(dim_id, title, desc, rarity, progress_data)
+    except Exception:
+        log.exception("写入洞察失败")
+        return None
+
+
 def process(text, data):
     if not text or not text.strip():
         return {"status": "error", "message": "空内容"}
@@ -342,9 +378,19 @@ def process(text, data):
 
     action = result.get("action")
     if action == "update":
-        return apply_update(data, result)
+        out = apply_update(data, result)
+        if out.get("status") == "ok":
+            ins = _maybe_grant_insight(out["dimension_id"], result, data)
+            if ins:
+                out["insight"] = ins
+        return out
     if action == "create":
-        return apply_create(data, result)
+        out = apply_create(data, result)
+        if out.get("status") == "ok":
+            ins = _maybe_grant_insight(out["dimension_id"], result, data)
+            if ins:
+                out["insight"] = ins
+        return out
     if action == "skip":
         return apply_skip(result)
     if action == "evolve":

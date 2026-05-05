@@ -6,6 +6,7 @@ secrets.local.py
 
 # 用户数据 / 运行时产物
 data/progress.json
+data/achievements.json
 data/app.log*
 data/weekly/
 data/*.tmp
@@ -33,3 +34,7 @@ Thumbs.db
 
 # Windows 启动产物
 *.lnk
+
+# 临时素材
+image.png
+*.tmp.png

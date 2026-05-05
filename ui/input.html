@@ -50,6 +50,23 @@ document.getElementById("open-dash").addEventListener("click", async () => {
   if (window.pywebview && window.pywebview.api) await window.pywebview.api.show_dashboard();
 });
 
+function renderUnlocks(r) {
+  const items = [];
+  if (r.insight && r.insight.title) {
+    items.push({ ...r.insight, kind: "洞察" });
+  }
+  if (r.unlocked && r.unlocked.length) {
+    for (const u of r.unlocked) items.push({ ...u, kind: u.scope === "global" ? "全局" : "里程碑" });
+  }
+  if (!items.length) return "";
+  let h = `<div class="fb-head" style="margin-top:8px"><span class="fb-pill unlock">解锁成就 ×${items.length}</span></div><div class="fb-unlock-list">`;
+  for (const it of items) {
+    h += `<div class="fb-unlock-item"><b>${escapeHTML(it.title)}</b> · ${escapeHTML(it.kind)} · ${escapeHTML(it.rarity || "common")}<br>${escapeHTML(it.description || it.condition_text || "")}</div>`;
+  }
+  h += `</div>`;
+  return h;
+}
+
 function renderResult(r) {
   if (r.status === "error") {
     setFeedback(`<div class="fb-head"><span class="fb-pill error">错误</span></div><div class="fb-summary">${escapeHTML(r.message || "未知错误")}</div>`, "error");
@@ -68,10 +85,10 @@ function renderResult(r) {
       `<div class="fb-head"><span class="fb-pill">已记录</span>${cyc}<span class="fb-title">${escapeHTML(r.dimension_label)}</span></div>
        <div class="fb-stage">阶段：${escapeHTML(r.phase_name)} · 周期 ${r.cycle}</div>
        <div class="fb-summary">${escapeHTML(r.summary)}</div>
-       ${cross}${next}`,
+       ${cross}${next}${renderUnlocks(r)}`,
       "ok"
     );
-    return { keepText: false };
+    return { keepText: false, hasUnlocks: !!(r.unlocked && r.unlocked.length) || !!r.insight };
   }
   if (a === "create") {
     const next = (r.next_steps && r.next_steps.length) ? `<div class="fb-next"><b>下一步:</b> ${r.next_steps.map(escapeHTML).join("；")}</div>` : "";
@@ -80,10 +97,10 @@ function renderResult(r) {
        <div class="fb-stage">阶段路径：${r.phases.map(escapeHTML).join(" → ")}</div>
        <div class="fb-summary">${escapeHTML(r.summary)}</div>
        <div class="fb-next" style="font-style:italic">${escapeHTML(r.reason || "")}</div>
-       ${next}`,
+       ${next}${renderUnlocks(r)}`,
       "create"
     );
-    return { keepText: false };
+    return { keepText: false, hasUnlocks: !!(r.unlocked && r.unlocked.length) || !!r.insight };
   }
   if (a === "evolve") {
     return renderEvolve(r);
@@ -177,13 +194,15 @@ function renderEvolve(r) {
 function scheduleClear(out) {
   if (autoClearTimer) clearTimeout(autoClearTimer);
   if (out && out.noAutoClear) return;
+  // 解锁了成就时多停留一会让人看
+  const wait = (out && out.hasUnlocks) ? 7000 : 3500;
   autoClearTimer = setTimeout(async () => {
     if (!out.keepText) area.value = "";
     hideFeedback();
     if (window.pywebview && window.pywebview.api) {
       try { await window.pywebview.api.hide_paste(); } catch (e) {}
     }
-  }, 3500);
+  }, wait);
 }
 
 async function submit() {
