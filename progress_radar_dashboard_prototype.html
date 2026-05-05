@@ -1,0 +1,179 @@
+
+<h2 class="sr-only">ProgressRadar dashboard prototype showing research progress across multiple dimensions</h2>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.wrap{padding:1rem 0;font-family:var(--font-sans)}
+.dims{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:24px}
+.dim-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px;cursor:pointer;transition:border-color .15s}
+.dim-card:hover{border-color:var(--color-border-secondary)}
+.dim-card.active{border-color:var(--color-border-info);border-width:2px}
+.dim-label{font-size:14px;font-weight:500;color:var(--color-text-primary);margin-bottom:8px}
+.dim-stage{font-size:12px;color:var(--color-text-secondary);margin-bottom:12px;line-height:1.4}
+.dim-ring-row{display:flex;align-items:center;gap:12px}
+.dim-stats{font-size:12px;color:var(--color-text-tertiary);line-height:1.6}
+.dim-stats b{color:var(--color-text-secondary);font-weight:500}
+.detail{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:20px;margin-bottom:24px}
+.detail-title{font-size:16px;font-weight:500;margin-bottom:4px}
+.detail-sub{font-size:13px;color:var(--color-text-secondary);margin-bottom:16px}
+.phase-track{display:flex;align-items:center;gap:0;margin-bottom:20px;position:relative}
+.phase-node{display:flex;flex-direction:column;align-items:center;flex:1;position:relative;z-index:1}
+.phase-dot{width:28px;height:28px;border-radius:50%;border:2px solid var(--color-border-tertiary);background:var(--color-background-primary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--color-text-tertiary);transition:all .2s}
+.phase-dot.done{background:#E6F1FB;border-color:#378ADD;color:#0C447C}
+.phase-dot.current{background:#378ADD;border-color:#378ADD;color:#fff;box-shadow:0 0 0 4px rgba(55,138,221,0.15)}
+.phase-name{font-size:10px;color:var(--color-text-tertiary);margin-top:6px;text-align:center;max-width:70px;line-height:1.3}
+.phase-name.active-name{color:var(--color-text-primary);font-weight:500}
+.phase-line{position:absolute;top:14px;left:0;right:0;height:2px;background:var(--color-border-tertiary);z-index:0}
+.phase-line-fill{height:2px;background:#378ADD;transition:width .3s}
+.entries-title{font-size:13px;font-weight:500;color:var(--color-text-secondary);margin-bottom:10px}
+.entry{padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;gap:10px;align-items:flex-start}
+.entry:last-child{border-bottom:none}
+.entry-date{font-size:11px;color:var(--color-text-tertiary);min-width:52px;padding-top:2px}
+.entry-text{font-size:13px;color:var(--color-text-primary);line-height:1.5}
+.entry-tag{display:inline-block;font-size:10px;padding:2px 6px;border-radius:var(--border-radius-md);background:var(--color-background-info);color:var(--color-text-info);margin-left:4px}
+.heatmap{margin-bottom:20px}
+.hm-row{display:flex;align-items:center;gap:4px;margin-bottom:3px}
+.hm-label{font-size:11px;color:var(--color-text-tertiary);width:100px;text-align:right;padding-right:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hm-cell{width:16px;height:16px;border-radius:3px;background:var(--color-background-secondary);transition:background .15s}
+.hm-legend{display:flex;align-items:center;gap:4px;margin-left:108px;margin-top:4px}
+.hm-legend span{font-size:10px;color:var(--color-text-tertiary)}
+.hm-week{font-size:9px;color:var(--color-text-tertiary);text-align:center;width:16px}
+.hm-weeks{display:flex;gap:4px;margin-left:108px;margin-bottom:4px}
+.metric-row{display:flex;gap:12px;margin-bottom:16px}
+.metric{flex:1;background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px}
+.metric-label{font-size:11px;color:var(--color-text-tertiary);margin-bottom:4px}
+.metric-val{font-size:20px;font-weight:500;color:var(--color-text-primary)}
+</style>
+<div class="wrap" id="app"></div>
+<script>
+const dims = [
+  { id:'cp', label:'Conformal Prediction', stage:3, phases:['文献调研','理论框架','实验验证','论文写作','投稿修改'],
+    entries:[
+      {d:'05/04',t:'完成多资产联合风险监控实验',tag:'实验'},
+      {d:'04/28',t:'1D conformal优于椭球投影的结论确认',tag:'发现'},
+      {d:'04/20',t:'DCC增强椭球体方法实现',tag:'代码'},
+      {d:'04/12',t:'单资产conformal VaR回测完成',tag:'实验'},
+      {d:'04/01',t:'STACI定理扩展到时变矩阵的证明启动',tag:'理论'},
+    ], heat:[0,1,2,1,3,2,1, 0,2,1,2,1,0,1, 1,3,2,1,2,1,0, 2,1,3,2,1,2,1, 1,2,0,0,0,0,0]},
+  { id:'vol', label:'波动率预测论文', stage:4, phases:['数据处理','模型实现','实验对比','写作投稿','审稿修改'],
+    entries:[
+      {d:'04/15',t:'论文投稿至Journal of Forecasting',tag:'里程碑'},
+      {d:'04/08',t:'VaR backtesting部分完成修改',tag:'写作'},
+      {d:'03/25',t:'MCS与HAC-DM检验结果整理完毕',tag:'分析'},
+    ], heat:[0,0,0,1,1,0,0, 0,1,2,1,0,0,0, 1,2,1,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0]},
+  { id:'hw', label:'华为CodeCraft', stage:1, phases:['报名了解','学习准备','初赛','复赛','决赛'],
+    entries:[
+      {d:'05/01',t:'确认校级奖项设置结构',tag:'信息'},
+      {d:'04/25',t:'完成注册报名',tag:'里程碑'},
+    ], heat:[0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,1,0,0, 0,0,0,0,0,1,0, 1,0,0,0,0,0,0]},
+  { id:'exam', label:'期末考试', stage:1, phases:['梳理重点','基础概念','作业题','冲刺','考试'],
+    entries:[
+      {d:'05/03',t:'确认开卷考试形式，需准备资料索引',tag:'信息'},
+    ], heat:[0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,1,0,0,0,0]},
+  { id:'career', label:'职业方向探索', stage:1, phases:['信息收集','方向评估','决策','准备','执行'],
+    entries:[
+      {d:'04/18',t:'参加UESTC春招会',tag:'行动'},
+      {d:'04/10',t:'投递源流资本投资分析岗',tag:'行动'},
+      {d:'03/30',t:'FinTech竞赛调研（ICBC杯、花旗杯）',tag:'信息'},
+    ], heat:[0,0,0,0,0,0,0, 0,0,1,0,0,0,0, 0,0,0,1,0,0,0, 0,1,0,0,0,0,0, 0,0,0,0,0,0,0]},
+  { id:'tool', label:'AI工具链与基础设施', stage:2, phases:['需求识别','搭建部署','调试优化','稳定运行','迭代'],
+    entries:[
+      {d:'05/02',t:'Codex CLI OAuth端口冲突问题排查',tag:'调试'},
+      {d:'04/22',t:'AstrBot QQ chatbot + DeepSeek集成完成',tag:'里程碑'},
+      {d:'04/15',t:'VLESS+Reality VPN部署到RackNerd',tag:'部署'},
+    ], heat:[0,0,1,0,1,0,0, 0,1,0,0,1,0,0, 0,0,1,0,0,1,0, 0,1,0,1,0,0,0, 0,0,1,0,0,0,0]}
+];
+const heatColors = ['','#E6F1FB','#85B7EB','#378ADD'];
+const weekLabels = ['W1','W2','W3','W4','W5'];
+let selected = 'cp';
+
+function ringsvg(dim, sz) {
+  const r = sz/2 - 4, cx = sz/2, cy = sz/2;
+  const pct = (dim.stage + 0.5) / dim.phases.length;
+  const total = dim.entries.length;
+  const a1 = -Math.PI/2, a2 = a1 + pct * 2 * Math.PI;
+  const x1 = cx+r*Math.cos(a1), y1 = cy+r*Math.sin(a1);
+  const x2 = cx+r*Math.cos(a2), y2 = cy+r*Math.sin(a2);
+  const lg = pct > 0.5 ? 1 : 0;
+  const ir = Math.min(r * 0.6, r - 6);
+  const fill = Math.min(total / 15, 1);
+  return `<svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--color-border-tertiary)" stroke-width="3"/>
+    <path d="M${x1},${y1} A${r},${r} 0 ${lg} 1 ${x2},${y2}" fill="none" stroke="#378ADD" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="${cx}" cy="${cy}" r="${ir * fill}" fill="rgba(55,138,221,0.08)"/>
+    <text x="${cx}" y="${cy + 1}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="500" fill="var(--color-text-primary)">${total}</text>
+  </svg>`;
+}
+
+function render() {
+  const d = dims.find(x => x.id === selected);
+  const app = document.getElementById('app');
+  const totalEntries = dims.reduce((s,x) => s + x.entries.length, 0);
+  const activeDims = dims.filter(x => x.entries.length > 0).length;
+  const thisWeek = dims.reduce((s,x) => s + x.heat.slice(-7).reduce((a,b)=>a+b,0), 0);
+
+  let h = `<div class="metric-row">
+    <div class="metric"><div class="metric-label">Total entries</div><div class="metric-val">${totalEntries}</div></div>
+    <div class="metric"><div class="metric-label">Active dimensions</div><div class="metric-val">${activeDims}</div></div>
+    <div class="metric"><div class="metric-label">This week activity</div><div class="metric-val">${thisWeek}</div></div>
+  </div>`;
+
+  h += `<div class="dims">`;
+  for (const dm of dims) {
+    h += `<div class="dim-card${dm.id===selected?' active':''}" onclick="selected='${dm.id}';render()">
+      <div class="dim-label">${dm.label}</div>
+      <div class="dim-stage">${dm.phases[dm.stage]}</div>
+      <div class="dim-ring-row">
+        ${ringsvg(dm, 52)}
+        <div class="dim-stats">
+          <b>${dm.entries.length}</b> records<br>
+          Phase <b>${dm.stage+1}</b>/${dm.phases.length}
+        </div>
+      </div>
+    </div>`;
+  }
+  h += `</div>`;
+
+  const linePct = Math.round((d.stage / (d.phases.length - 1)) * 100);
+  h += `<div class="detail">
+    <div class="detail-title">${d.label}</div>
+    <div class="detail-sub">Current: ${d.phases[d.stage]}</div>
+    <div style="position:relative;margin-bottom:24px">
+      <div class="phase-line"><div class="phase-line-fill" style="width:${linePct}%"></div></div>
+      <div class="phase-track">`;
+  for (let i = 0; i < d.phases.length; i++) {
+    const cls = i < d.stage ? 'done' : i === d.stage ? 'current' : '';
+    const nm = i === d.stage ? 'active-name' : '';
+    h += `<div class="phase-node">
+      <div class="phase-dot ${cls}">${i+1}</div>
+      <div class="phase-name ${nm}">${d.phases[i]}</div>
+    </div>`;
+  }
+  h += `</div></div>`;
+
+  h += `<div class="entries-title">Recent progress</div>`;
+  for (const e of d.entries) {
+    h += `<div class="entry">
+      <div class="entry-date">${e.d}</div>
+      <div class="entry-text">${e.t}<span class="entry-tag">${e.tag}</span></div>
+    </div>`;
+  }
+  h += `</div>`;
+
+  h += `<div class="heatmap">`;
+  h += `<div class="hm-weeks">${weekLabels.map(w=>`<div class="hm-week" style="width:calc(16px * 7 + 4px * 6);text-align:center">${w}</div>`).join('')}</div>`;
+  for (const dm of dims) {
+    h += `<div class="hm-row"><div class="hm-label">${dm.label}</div>`;
+    for (let i = 0; i < 35; i++) {
+      const v = dm.heat[i] || 0;
+      const bg = v > 0 ? heatColors[Math.min(v, 3)] : '';
+      h += `<div class="hm-cell" ${bg ? `style="background:${bg}"` : ''}></div>`;
+    }
+    h += `</div>`;
+  }
+  h += `<div class="hm-legend"><span>Less</span>`;
+  for (let i = 0; i <= 3; i++) h += `<div class="hm-cell" style="width:12px;height:12px;${i>0?`background:${heatColors[i]}`:''}"></div>`;
+  h += `<span>More</span></div></div>`;
+  app.innerHTML = h;
+}
+render();
+</script>

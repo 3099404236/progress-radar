@@ -1,0 +1,5 @@
+openai>=1.40.0
+pywebview==5.4
+pystray>=0.19
+Pillow>=10.0
+keyboard>=0.13

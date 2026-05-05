@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ProgressRadar · 仪表盘</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="dash-shell">
+  <div class="dash-header">
+    <div class="brand"><span class="brand-dot"></span><span class="dash-title">ProgressRadar 仪表盘</span></div>
+    <div class="dash-tools">
+      <div class="toggle-group" id="cycle-toggle">
+        <button data-v="current" class="on">当前周期</button>
+        <button data-v="all">全部</button>
+      </div>
+      <button class="bar-link" id="weekly-btn">生成周报</button>
+      <button class="bar-link" id="paste-btn">+ 粘贴</button>
+    </div>
+  </div>
+  <div class="dash-body">
+    <div class="dash-body-inner">
+      <div id="app"><div class="empty">加载中…</div></div>
+    </div>
+  </div>
+</div>
+<script src="dashboard.js"></script>
+</body>
+</html>

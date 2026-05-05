@@ -1,0 +1,27 @@
+{
+  "dimensions": {
+    "conformal_prediction": {
+      "label": "Conformal Prediction研究",
+      "created_at": "2025-03-15",
+      "created_by": "preset",
+      "phases": [
+        {"name": "文献调研", "desc": "阅读相关论文，建立理论认知"},
+        {"name": "理论框架", "desc": "确定方法论，推导核心公式"},
+        {"name": "实验验证", "desc": "代码实现，跑实验，对比分析"},
+        {"name": "论文写作", "desc": "整理结果，撰写论文"},
+        {"name": "投稿修改", "desc": "投稿、审稿、修改"}
+      ],
+      "current_stage": 2,
+      "entries": [],
+      "milestones": []
+    }
+  },
+  "meta": {
+    "total_entries": 0,
+    "last_updated": null,
+    "pending_confirms": {},
+    "pending_evolutions": {},
+    "seen_hashes": [],
+    "schema_version": 2
+  }
+}

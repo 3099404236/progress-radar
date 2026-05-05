@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ProgressRadar · 快速粘贴</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="input-shell">
+  <div class="input-bar">
+    <div class="brand"><span class="brand-dot"></span>ProgressRadar</div>
+    <button class="bar-link" id="open-dash">仪表盘 →</button>
+  </div>
+  <div class="input-main">
+    <textarea id="paste-area" placeholder="粘贴对话、笔记、代码片段… Enter 提交，Shift+Enter 换行，Esc 隐藏。"></textarea>
+    <div class="input-actions">
+      <span class="hint">Enter 提交 · Shift+Enter 换行 · Esc 隐藏</span>
+      <button id="submit-btn" class="btn">提交</button>
+    </div>
+    <div id="feedback" class="feedback"></div>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const area = $("#paste-area");
+const btn = $("#submit-btn");
+const fb = $("#feedback");
+let autoClearTimer = null;
+let pyReady = false;
+
+function escapeHTML(s) {
+  return (s || "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+function setFeedback(html, kind) {
+  fb.className = "feedback show " + (kind || "");
+  fb.innerHTML = html;
+}
+function hideFeedback() { fb.className = "feedback"; fb.innerHTML = ""; }
+
+function focusArea() { try { area.focus(); area.select && area.select(); } catch(e) {} }
+window.addEventListener("pywebviewready", () => { pyReady = true; focusArea(); });
+window.addEventListener("focus", focusArea);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) focusArea(); });
+setTimeout(() => { if (!pyReady && window.pywebview && window.pywebview.api) pyReady = true; focusArea(); }, 600);
+setInterval(() => { if (document.activeElement !== area && !document.querySelector(".confirm-options, .evolve-actions")) focusArea(); }, 1500);
+
+document.getElementById("open-dash").addEventListener("click", async () => {
+  if (window.pywebview && window.pywebview.api) await window.pywebview.api.show_dashboard();
+});
+
+function renderResult(r) {
+  if (r.status === "error") {
+    setFeedback(`<div class="fb-head"><span class="fb-pill error">错误</span></div><div class="fb-summary">${escapeHTML(r.message || "未知错误")}</div>`, "error");
+    return { keepText: true };
+  }
+  const a = r.action;
+  if (a === "skip") {
+    setFeedback(`<div class="fb-head"><span class="fb-pill skip">已忽略</span></div><div class="fb-summary">${escapeHTML(r.reason || "无实质进展")}</div>`, "skip");
+    return { keepText: false };
+  }
+  if (a === "update") {
+    const cyc = r.cycle_event ? `<span class="fb-pill cycle">新周期 #${r.cycle_event.new_cycle_number || r.cycle}</span>` : "";
+    const cross = (r.cross_dimensions && r.cross_dimensions.length) ? `<div class="fb-next">还涉及: ${r.cross_dimensions.map(escapeHTML).join("、")}</div>` : "";
+    const next = (r.next_steps && r.next_steps.length) ? `<div class="fb-next"><b>下一步:</b> ${r.next_steps.map(escapeHTML).join("；")}</div>` : "";
+    setFeedback(
+      `<div class="fb-head"><span class="fb-pill">已记录</span>${cyc}<span class="fb-title">${escapeHTML(r.dimension_label)}</span></div>
+       <div class="fb-stage">阶段：${escapeHTML(r.phase_name)} · 周期 ${r.cycle}</div>
+       <div class="fb-summary">${escapeHTML(r.summary)}</div>
+       ${cross}${next}`,
+      "ok"
+    );
+    return { keepText: false };
+  }
+  if (a === "create") {
+    const next = (r.next_steps && r.next_steps.length) ? `<div class="fb-next"><b>下一步:</b> ${r.next_steps.map(escapeHTML).join("；")}</div>` : "";
+    setFeedback(
+      `<div class="fb-head"><span class="fb-pill create">新维度</span><span class="fb-title">${escapeHTML(r.dimension_label)}</span></div>
+       <div class="fb-stage">阶段路径：${r.phases.map(escapeHTML).join(" → ")}</div>
+       <div class="fb-summary">${escapeHTML(r.summary)}</div>
+       <div class="fb-next" style="font-style:italic">${escapeHTML(r.reason || "")}</div>
+       ${next}`,
+      "create"
+    );
+    return { keepText: false };
+  }
+  if (a === "evolve") {
+    return renderEvolve(r);
+  }
+  if (a === "confirm") {
+    return renderConfirm(r);
+  }
+  return { keepText: true };
+}
+
+function renderConfirm(r) {
+  const opts = (r.options || []).map(o =>
+    `<button class="btn btn-secondary" data-id="${escapeHTML(o.dimension_id)}">${escapeHTML(o.label)}</button>`
+  ).join("");
+  setFeedback(
+    `<div class="fb-head"><span class="fb-pill confirm">需要确认</span></div>
+     <div class="fb-summary">${escapeHTML(r.question)}</div>
+     <div class="confirm-options" data-confirm-id="${escapeHTML(r.confirm_id)}">${opts}</div>`,
+    "ok"
+  );
+  fb.querySelectorAll(".confirm-options .btn").forEach(b => {
+    b.addEventListener("click", async () => {
+      const dimId = b.dataset.id;
+      const cid = fb.querySelector(".confirm-options").dataset.confirmId;
+      b.disabled = true;
+      try {
+        const r2 = JSON.parse(await window.pywebview.api.resolve_confirm(cid, dimId));
+        const out = renderResult(r2);
+        scheduleClear(out);
+      } catch (e) {
+        setFeedback(`<div class="fb-summary">错误：${escapeHTML(String(e))}</div>`, "error");
+      }
+    });
+  });
+  return { keepText: true, noAutoClear: true };
+}
+
+function renderEvolve(r) {
+  const cur = r.current_phases || [];
+  const prop = r.proposed_phases || [];
+  const remap = {};
+  for (const m of (r.entry_remapping || [])) remap[m.old_phase] = m.new_phase;
+
+  const curHTML = cur.map((p, i) => `<li>${escapeHTML(p)}<small>→ 新阶段 ${remap[i] !== undefined ? remap[i] + 1 : "—"}</small></li>`).join("");
+  const propHTML = prop.map((p) => {
+    const name = (p && p.name) ? p.name : p;
+    const desc = (p && p.desc) ? p.desc : "";
+    return `<li class="added">${escapeHTML(name)}<small>${escapeHTML(desc)}</small></li>`;
+  }).join("");
+
+  setFeedback(
+    `<div class="fb-head"><span class="fb-pill evolve">阶段演化建议</span><span class="fb-title">${escapeHTML(r.dimension_label)}</span></div>
+     <div class="fb-summary" style="font-style:italic">${escapeHTML(r.reason || "")}</div>
+     <div class="evolve-cmp">
+       <div class="evolve-col"><h5>当前阶段</h5><ol>${curHTML}</ol></div>
+       <div class="evolve-arrow">→</div>
+       <div class="evolve-col"><h5>建议阶段</h5><ol>${propHTML}</ol></div>
+     </div>
+     <div class="evolve-actions">
+       <button class="btn btn-secondary" data-eid="${escapeHTML(r.evolution_id)}" data-accept="0">保持原样</button>
+       <button class="btn btn-warn" data-eid="${escapeHTML(r.evolution_id)}" data-accept="1">接受新阶段</button>
+     </div>`,
+    "evolve"
+  );
+  fb.querySelectorAll(".evolve-actions .btn").forEach(b => {
+    b.addEventListener("click", async () => {
+      const eid = b.dataset.eid;
+      const accept = b.dataset.accept === "1";
+      b.disabled = true;
+      try {
+        const r2 = JSON.parse(await window.pywebview.api.confirm_evolution(eid, accept));
+        if (r2.status === "ok" && r2.action === "evolved") {
+          setFeedback(
+            `<div class="fb-head"><span class="fb-pill evolve">已演化</span><span class="fb-title">${escapeHTML(r2.dimension_label)} v${r2.version}</span></div>
+             <div class="fb-stage">新阶段路径：${r2.new_phases.map(escapeHTML).join(" → ")}</div>
+             <div class="fb-summary">当前阶段：${escapeHTML(r2.phase_name)}</div>`,
+            "evolve"
+          );
+        } else {
+          renderResult(r2);
+        }
+        scheduleClear({ keepText: false });
+      } catch (e) {
+        setFeedback(`<div class="fb-summary">错误：${escapeHTML(String(e))}</div>`, "error");
+      }
+    });
+  });
+  return { keepText: true, noAutoClear: true };
+}
+
+function scheduleClear(out) {
+  if (autoClearTimer) clearTimeout(autoClearTimer);
+  if (out && out.noAutoClear) return;
+  autoClearTimer = setTimeout(async () => {
+    if (!out.keepText) area.value = "";
+    hideFeedback();
+    if (window.pywebview && window.pywebview.api) {
+      try { await window.pywebview.api.hide_paste(); } catch (e) {}
+    }
+  }, 3500);
+}
+
+async function submit() {
+  const text = area.value.trim();
+  if (!text) return;
+  if (!window.pywebview || !window.pywebview.api) {
+    setFeedback(`<div class="fb-summary">客户端未就绪</div>`, "error");
+    return;
+  }
+  btn.disabled = true;
+  setFeedback(`<div class="fb-summary">AI 处理中…</div>`, "");
+  try {
+    const r = JSON.parse(await window.pywebview.api.submit(text));
+    const out = renderResult(r);
+    scheduleClear(out);
+  } catch (e) {
+    setFeedback(`<div class="fb-summary">错误：${escapeHTML(String(e))}</div>`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+btn.addEventListener("click", submit);
+area.addEventListener("keydown", (e) => {
+  // Enter 提交；Shift+Enter 换行；Ctrl/Cmd+Enter 也提交（兼容旧习惯）
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    submit();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && window.pywebview && window.pywebview.api) {
+    window.pywebview.api.hide_paste();
+  }
+});
+</script>
+</body>
+</html>
