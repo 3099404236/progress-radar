@@ -1,6 +1,7 @@
 const heatColors = ["", "#1f3552", "#2c6aab", "#4a9bee"];
 const phaseShades = ["#4a9bee", "#f0c870", "#8ad08f", "#d8a0e8", "#f08585", "#6cd0d0"];
 const rarityClass = { common: "common", uncommon: "uncommon", rare: "rare", epic: "epic", legendary: "legendary" };
+const rarityLabel = { common: "寻常", uncommon: "不凡", rare: "稀有", epic: "史诗", legendary: "传奇" };
 
 let dims = [];
 let selected = null;       // dim id of expanded card; null = none expanded
@@ -183,10 +184,13 @@ function achCard(item, kind) {
   const desc = escapeHTML(item.description || item.condition_text || "");
   const tag = kind === "insight" ? "洞察" : kind === "custom" ? "自定" : kind === "custom-locked" ? "未达" : "里程碑";
   const lock = kind === "custom-locked" ? " locked" : "";
+  const rarText = rarityLabel[item.rarity] || "寻常";
+  const date = item.unlocked_at ? `<div class="ach-card-date">${escapeHTML(item.unlocked_at)}</div>` : "";
   return `<div class="ach-card ${rar}${lock}" title="${desc}">
-    <div class="ach-card-top"><span class="ach-card-tag">${tag}</span><span class="ach-card-rar">${item.rarity || "common"}</span></div>
+    <div class="ach-card-top"><span class="ach-card-tag">${tag}</span><span class="ach-card-rar">${rarText}</span></div>
     <div class="ach-card-title">${title}</div>
     <div class="ach-card-desc">${desc}</div>
+    ${date}
   </div>`;
 }
 
@@ -210,7 +214,10 @@ function renderDetailPanel(d) {
   let h = `<div class="dim-detail" data-detail="${escapeHTML(d.id)}">
     <div class="dim-detail-head">
       <div class="dim-detail-title">${escapeHTML(d.label)}${d.created_by === "auto" ? ' <span class="dim-badge" style="position:static;margin-left:6px">auto</span>' : ""}</div>
-      <button class="bar-link" data-collapse>收起 ▲</button>
+      <div style="display:flex;gap:6px">
+        <button class="bar-link" data-retheme="${escapeHTML(d.id)}" title="让 AI 按本维度主题重新命名 13 个里程碑">重命名成就</button>
+        <button class="bar-link" data-collapse>收起 ▲</button>
+      </div>
     </div>`;
   h += metricRow(d);
   h += `<div class="dim-detail-sub">主阶段：${escapeHTML((d.phases || [])[d.primary_phase] || "—")} · 共 ${d.total_entries || 0} 条记录${versionInfo}</div>`;
@@ -316,6 +323,29 @@ function render() {
 
   app.querySelectorAll("[data-add-custom]").forEach(btn => {
     btn.addEventListener("click", (e) => { e.stopPropagation(); addCustomFlow(btn.dataset.addCustom); });
+  });
+
+  app.querySelectorAll("[data-retheme]").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!window.pywebview || !window.pywebview.api) return;
+      const id = btn.dataset.retheme;
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = "AI 正在命名…";
+      try {
+        const r = JSON.parse(await window.pywebview.api.regenerate_themed_milestones(id));
+        if (r.status === "ok") {
+          btn.textContent = `已重命名 ${r.count} 项 ✓`;
+          setTimeout(() => { btn.textContent = orig; btn.disabled = false; load(); }, 1200);
+        } else {
+          alert("失败：" + (r.message || ""));
+          btn.disabled = false; btn.textContent = orig;
+        }
+      } catch (err) {
+        alert("错误：" + err);
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
   });
 }
 

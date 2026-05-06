@@ -108,9 +108,16 @@ cycle_event = {{"type":"new_cycle","reason":"...","new_cycle_number":N,"reset_pr
 
 ### 第八步：维度专属洞察成就（高度可选，绝大多数 update 应为 null）⭐
 - 每个维度有自己的"洞察"成就池。如果本次提交在所属维度内代表一个真正的转折点（不是普通进展），才颁发
-- 类型参考：方法突破 / 质量跃迁 / 关键发现 / 瓶颈突破 / 意外连接
-- title: 4-6 字中文短语；description: 一句话说原因
-- rarity: common（小亮点）/ uncommon（明显进步）/ rare（突破）/ epic（罕见里程碑）
+- 类型参考：方法突破 / 质量跃迁 / 关键发现 / 瓶颈突破 / 意外连接 / 边界拓展
+- **title: 必须是 4 个字的诗化中文短语**，要带画面感，让人一看就觉得"这是个里程碑"。参考风格：
+  - 寻常事写得有气势：「破茧」「燎原」「开光」「初燃」「问鼎」「化境」「破壁」「炼骨」「拨云」「凿空」
+  - 不要用平铺直叙的描述性词："新方向启动"、"实验突破" 这种太朴实
+- description: 一句话说原因，但用文学化口吻（不要"完成了 XX"，要"踏上 XX 之径"这种）
+- rarity 严格按门槛：
+  - common（小亮点 / 第一次做某事）
+  - uncommon（明显进步 / 跨过一个关键点）
+  - rare（真正的突破 / 罕见洞见）
+  - epic（罕见里程碑 / 改变方向的事件）
 - 已颁发过的洞察会列在维度摘要里，**绝对不要换汤不换药地重复**
 - create 维度时也可以附 achievement，对"开新方向"这类标记有意义
 
@@ -300,6 +307,21 @@ def apply_create(data, result):
     }
     new_dim["entries"].append(_make_entry(result, initial, 1))
     data["dimensions"][dim_id] = new_dim
+
+    # 异步先不做，直接同步生成 themed milestone（一次额外 API 调用）
+    try:
+        import theme_generator
+        overrides = theme_generator.generate_for_dimension(
+            new_dim["label"],
+            [p["name"] for p in phase_objs],
+            [p.get("desc", "") for p in phase_objs],
+        )
+        if overrides:
+            import achievement_store
+            achievement_store.apply_themed_milestones(dim_id, overrides, data)
+            log.info("themed milestones 已生成 dim=%s n=%d", dim_id, len(overrides))
+    except Exception:
+        log.exception("themed milestones 生成失败（不影响主流程）")
 
     return {
         "status": "ok",

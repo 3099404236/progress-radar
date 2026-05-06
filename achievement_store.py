@@ -18,31 +18,62 @@ ACHIEVEMENTS_FILE = os.path.join(config.DATA_DIR, "achievements.json")
 _lock = threading.Lock()
 
 
+def _refresh_from_template(slots, templates, themed_overrides=None):
+    """同 id 的 slot 刷新 rarity（保留 unlocked_at + 已 themed 的 title/description）
+       themed_overrides: {id: {title, description}}, 优先覆盖
+       如果 slot 有 themed=True 标记，title/description 不再被模板覆盖。
+    """
+    by_id = {s["id"]: s for s in slots if "id" in s}
+    out = []
+    seen = set()
+    for t in templates:
+        s = by_id.get(t["id"])
+        if s is None:
+            s = make_dim_slot(t)
+        # rarity 永远跟模板（避免错过新规则）
+        s["rarity"] = t["rarity"]
+        # title/desc：优先 override，其次保留 themed，最后用模板
+        if themed_overrides and t["id"] in themed_overrides:
+            ov = themed_overrides[t["id"]]
+            s["title"] = ov.get("title", s.get("title", t["title"]))
+            s["description"] = ov.get("description", s.get("description", t["description"]))
+            s["themed"] = True
+        elif not s.get("themed"):
+            s["title"] = t["title"]
+            s["description"] = t["description"]
+        out.append(s)
+        seen.add(t["id"])
+    for s in slots:
+        if s.get("id") and s["id"] not in seen:
+            out.append(s)
+    return out
+
+
 def _ensure_global(data):
     g = data.setdefault("global", {})
     g.setdefault("milestones", [])
     g.setdefault("insights", [])
     g.setdefault("custom", [])
-
-    existing_ids = {m["id"] for m in g["milestones"]}
-    for t in GLOBAL_MILESTONE_TEMPLATES:
-        if t["id"] not in existing_ids:
-            g["milestones"].append(make_global_slot(t))
+    g["milestones"] = _refresh_from_template(g["milestones"], GLOBAL_MILESTONE_TEMPLATES)
 
 
-def ensure_dimension_block(data, dim_id):
-    """为新维度创建 13 个空 milestone 槽"""
+def ensure_dimension_block(data, dim_id, themed_overrides=None):
+    """为新维度创建 13 个空 milestone 槽；存在则按模板刷新；可传 themed_overrides 覆盖文案"""
     pd = data.setdefault("per_dimension", {})
     block = pd.setdefault(dim_id, {"milestones": [], "insights": [], "custom": []})
     block.setdefault("milestones", [])
     block.setdefault("insights", [])
     block.setdefault("custom", [])
-
-    existing_ids = {m["id"] for m in block["milestones"]}
-    for t in DIM_MILESTONE_TEMPLATES:
-        if t["id"] not in existing_ids:
-            block["milestones"].append(make_dim_slot(t))
+    block["milestones"] = _refresh_from_template(block["milestones"], DIM_MILESTONE_TEMPLATES, themed_overrides)
     return block
+
+
+def apply_themed_milestones(dim_id, themed_overrides, progress_data=None):
+    """为某维度套用 themed 命名（可后期 regenerate）"""
+    data = load(progress_data)
+    ensure_dimension_block(data, dim_id, themed_overrides)
+    save(data)
+    return data["per_dimension"][dim_id]
 
 
 def load(progress_data=None):

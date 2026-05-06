@@ -286,6 +286,27 @@ class API:
             log.exception("unlock_custom 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    def regenerate_themed_milestones(self, dimension_id):
+        """重新为某维度按主题生成 13 个 milestone 名（覆盖现有 themed）"""
+        try:
+            import theme_generator
+            data = data_store.load()
+            dim = data["dimensions"].get(dimension_id)
+            if not dim:
+                return json.dumps({"status": "error", "message": "维度不存在"}, ensure_ascii=False)
+            overrides = theme_generator.generate_for_dimension(
+                dim["label"],
+                [p["name"] for p in dim["phases"]],
+                [p.get("desc", "") for p in dim["phases"]],
+            )
+            if not overrides:
+                return json.dumps({"status": "error", "message": "AI 未返回有效命名"}, ensure_ascii=False)
+            achievement_store.apply_themed_milestones(dimension_id, overrides, data)
+            return json.dumps({"status": "ok", "count": len(overrides), "items": overrides}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("regenerate_themed 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
     def recheck_achievements(self):
         """手动重算所有成就（调试 / 修复用）"""
         try:
