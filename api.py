@@ -317,6 +317,40 @@ class API:
             log.exception("get_raw_recent 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    def replay_raw(self, raw_id):
+        """用当前 prompt 重新处理某条已归档的原文（即使之前是 skip / 重复也会重跑）"""
+        try:
+            items = raw_archive.read_all()
+            item = next((x for x in items if x.get("id") == raw_id), None)
+            if not item:
+                return json.dumps({"status": "error", "message": "未找到该归档记录"}, ensure_ascii=False)
+            text = item["text"]
+            data = data_store.load()
+            seen = data.setdefault("meta", {}).setdefault("seen_hashes", [])
+            text_hash = item.get("text_hash") or ""
+            if text_hash in seen:
+                seen.remove(text_hash)
+            result = ai_processor.process(text, data)
+            if result.get("status") == "ok" and result.get("action") in ("update", "create"):
+                if text_hash and text_hash not in seen:
+                    seen.append(text_hash)
+            data_store.save(data)
+            if result.get("status") == "ok" and result.get("action") in ("update", "create"):
+                try:
+                    newly, _ = achievement_checker.check(data, result.get("dimension_id"))
+                    if newly:
+                        result["unlocked"] = newly
+                except Exception:
+                    log.exception("成就检查失败")
+            try:
+                raw_archive.append(text, {**(result or {}), "_replay_of": raw_id})
+            except Exception:
+                pass
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            log.exception("replay_raw 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
     def export_raw_to_desktop(self):
         try:
             home = os.environ.get("USERPROFILE") or os.path.expanduser("~")
