@@ -9,28 +9,38 @@ API key 来源（按优先级）：
 """
 import os
 
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-
-if not DEEPSEEK_API_KEY:
+def _load_secrets():
+    """从环境或 secrets.local.py 加载秘钥"""
+    secrets = {}
     try:
-        from secrets_local import DEEPSEEK_API_KEY as _LOCAL_KEY  # type: ignore
-        DEEPSEEK_API_KEY = _LOCAL_KEY
+        import importlib.util
+        _here = os.path.dirname(os.path.abspath(__file__))
+        _spec = importlib.util.spec_from_file_location(
+            "secrets_local", os.path.join(_here, "secrets.local.py")
+        )
+        if _spec and _spec.loader:
+            _mod = importlib.util.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            for k in ("DEEPSEEK_API_KEY", "SILICONFLOW_API_KEY"):
+                v = getattr(_mod, k, None)
+                if v:
+                    secrets[k] = v
     except Exception:
-        try:
-            import importlib.util
-            _here = os.path.dirname(os.path.abspath(__file__))
-            _spec = importlib.util.spec_from_file_location(
-                "secrets_local", os.path.join(_here, "secrets.local.py")
-            )
-            if _spec and _spec.loader:
-                _mod = importlib.util.module_from_spec(_spec)
-                _spec.loader.exec_module(_mod)
-                DEEPSEEK_API_KEY = getattr(_mod, "DEEPSEEK_API_KEY", "")
-        except Exception:
-            pass
+        pass
+    return secrets
+
+_SECRETS = _load_secrets()
+
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY") or _SECRETS.get("DEEPSEEK_API_KEY", "")
+SILICONFLOW_API_KEY = os.environ.get("SILICONFLOW_API_KEY") or _SECRETS.get("SILICONFLOW_API_KEY", "")
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
+
+SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
+SILICONFLOW_IMAGE_MODEL = "Tongyi-MAI/Z-Image-Turbo"
+SILICONFLOW_IMAGE_SIZE = "1024x1024"
+SILICONFLOW_NUM_STEPS = 8
 
 HOST = "127.0.0.1"
 PORT = 5000
@@ -40,3 +50,4 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DATA_FILE = os.path.join(DATA_DIR, "progress.json")
 WEEKLY_DIR = os.path.join(DATA_DIR, "weekly")
+IMAGES_DIR = os.path.join(DATA_DIR, "achievement_images")

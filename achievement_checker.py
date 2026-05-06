@@ -2,12 +2,33 @@
 """成就检查器：每次 submit 后调用 check()
 计算 13 个 dim_milestone + 7 个 global milestone，返回新解锁列表
 """
+import hashlib
 import logging
 from datetime import datetime, timedelta, date
 
 import achievement_store
+import image_generator
 
 log = logging.getLogger("progressradar.achv")
+
+
+def _kick_image(slot, scope_label="dim"):
+    """解锁后异步生图：标 inflight，回调写 ready / missing"""
+    image_id = slot.get("image_id")
+    vc = slot.get("visual_concept", "")
+    rarity = slot.get("rarity", "common")
+    if not image_id or not vc:
+        return
+    if image_generator.has_image(image_id):
+        slot["image_status"] = "ready"
+        return
+    slot["image_status"] = "inflight"
+
+    def _on_done(iid, path):
+        # 这里没有进度数据的引用 — 只是清 inflight。前端下次 refresh 会发现图存在
+        log.info("生图回调 image_id=%s path=%s", iid, path)
+
+    image_generator.generate_async(image_id, vc, rarity, on_done=_on_done)
 
 
 def _entry_dates(entries):
@@ -103,10 +124,12 @@ def _check_dim(progress_data, ach_data, dim_id):
             continue
         if checks.get(slot["id"]):
             slot["unlocked_at"] = today
+            _kick_image(slot, "dim")
             newly.append({
                 "scope": "dimension",
                 "dimension_id": dim_id,
                 "id": slot["id"],
+                "image_id": slot.get("image_id"),
                 "title": slot["title"],
                 "description": slot["description"],
                 "rarity": slot["rarity"],
@@ -160,9 +183,11 @@ def _check_global(progress_data, ach_data):
             continue
         if checks.get(slot["id"]):
             slot["unlocked_at"] = today
+            _kick_image(slot, "global")
             newly.append({
                 "scope": "global",
                 "id": slot["id"],
+                "image_id": slot.get("image_id"),
                 "title": slot["title"],
                 "description": slot["description"],
                 "rarity": slot["rarity"],
@@ -187,25 +212,35 @@ def check(progress_data, dimension_id=None):
     return newly, ach
 
 
-def add_insight(dimension_id, title, description, rarity="uncommon", progress_data=None):
-    """AI 颁发的维度专属洞察成就，去重写入"""
+def _hash8(s):
+    return hashlib.md5((s or "").encode("utf-8")).hexdigest()[:8]
+
+
+def add_insight(dimension_id, title, description, rarity="uncommon", visual_concept="", progress_data=None):
+    """AI 颁发的维度专属洞察成就，去重写入；可带 visual_concept"""
     ach = achievement_store.load(progress_data)
     block = achievement_store.ensure_dimension_block(ach, dimension_id)
     for ins in block["insights"]:
         if ins.get("title") == title:
             return None
+    image_id = f"insight__{dimension_id}__{_hash8(title)}"
     item = {
         "title": title,
         "description": description,
         "rarity": rarity,
+        "visual_concept": visual_concept or "",
         "unlocked_at": achievement_store.now_date(),
+        "image_id": image_id,
+        "image_status": "missing",
     }
+    if visual_concept:
+        _kick_image(item, "insight")
     block["insights"].append(item)
     achievement_store.save(ach)
     return {"scope": "dimension", "dimension_id": dimension_id, "kind": "insight", **item}
 
 
-def add_custom(dimension_id, title, condition_text, rarity="rare", progress_data=None):
+def add_custom(dimension_id, title, condition_text, rarity="rare", visual_concept="", progress_data=None):
     """用户自定义成就 — 默认锁定，由用户/AI 判断是否解锁"""
     ach = achievement_store.load(progress_data)
     if dimension_id == "__global__":
@@ -216,8 +251,11 @@ def add_custom(dimension_id, title, condition_text, rarity="rare", progress_data
         "title": title,
         "condition_text": condition_text,
         "rarity": rarity,
+        "visual_concept": visual_concept or "",
         "unlocked_at": None,
         "created_at": achievement_store.now_date(),
+        "image_id": f"custom__{dimension_id}__{_hash8(title)}",
+        "image_status": "missing",
     }
     block.setdefault("custom", []).append(item)
     achievement_store.save(ach)
@@ -230,6 +268,10 @@ def unlock_custom(dimension_id, title):
     for c in block.get("custom", []):
         if c.get("title") == title and not c.get("unlocked_at"):
             c["unlocked_at"] = achievement_store.now_date()
+            if c.get("visual_concept"):
+                c.setdefault("image_id", f"custom__{dimension_id}__{_hash8(title)}")
+                c["image_status"] = "missing"
+                _kick_image(c, "custom")
             achievement_store.save(ach)
             return c
     return None

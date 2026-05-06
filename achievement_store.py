@@ -18,10 +18,20 @@ ACHIEVEMENTS_FILE = os.path.join(config.DATA_DIR, "achievements.json")
 _lock = threading.Lock()
 
 
-def _refresh_from_template(slots, templates, themed_overrides=None):
-    """同 id 的 slot 刷新 rarity（保留 unlocked_at + 已 themed 的 title/description）
-       themed_overrides: {id: {title, description}}, 优先覆盖
-       如果 slot 有 themed=True 标记，title/description 不再被模板覆盖。
+def _image_id_for(scope, scope_id, slot_id):
+    """生成稳定的图片 ID
+       scope='dim' / 'global'；scope_id=dim_id 或 '_'；slot_id=milestone id"""
+    if scope == "dim":
+        return f"dim__{scope_id}__{slot_id}"
+    if scope == "global":
+        return f"global__{slot_id}"
+    return f"{scope}__{scope_id}__{slot_id}"
+
+
+def _refresh_from_template(slots, templates, themed_overrides=None, scope="dim", scope_id="_"):
+    """同 id 的 slot 刷新 rarity（保留 unlocked_at + 已 themed 的 title/description/visual_concept）
+       themed_overrides: {id: {title, description, visual_concept?}}, 优先覆盖
+       如果 slot 有 themed=True 标记，title/description/visual_concept 不再被模板覆盖。
     """
     by_id = {s["id"]: s for s in slots if "id" in s}
     out = []
@@ -30,13 +40,21 @@ def _refresh_from_template(slots, templates, themed_overrides=None):
         s = by_id.get(t["id"])
         if s is None:
             s = make_dim_slot(t)
-        # rarity 永远跟模板（避免错过新规则）
         s["rarity"] = t["rarity"]
-        # title/desc：优先 override，其次保留 themed，最后用模板
+        s.setdefault("image_status", "missing")
+        s["image_id"] = _image_id_for(scope, scope_id, t["id"])
+        # 模板增量：从未存过 visual_concept 的旧 slot 用模板兜底
+        if not s.get("visual_concept") and t.get("visual_concept"):
+            s["visual_concept"] = t["visual_concept"]
         if themed_overrides and t["id"] in themed_overrides:
             ov = themed_overrides[t["id"]]
             s["title"] = ov.get("title", s.get("title", t["title"]))
             s["description"] = ov.get("description", s.get("description", t["description"]))
+            if ov.get("visual_concept"):
+                s["visual_concept"] = ov["visual_concept"]
+                # themed 改了 vc → 旧图作废
+                if s.get("image_status") == "ready":
+                    s["image_status"] = "missing"
             s["themed"] = True
         elif not s.get("themed"):
             s["title"] = t["title"]
@@ -45,6 +63,7 @@ def _refresh_from_template(slots, templates, themed_overrides=None):
         seen.add(t["id"])
     for s in slots:
         if s.get("id") and s["id"] not in seen:
+            s.setdefault("image_status", "missing")
             out.append(s)
     return out
 
@@ -54,7 +73,7 @@ def _ensure_global(data):
     g.setdefault("milestones", [])
     g.setdefault("insights", [])
     g.setdefault("custom", [])
-    g["milestones"] = _refresh_from_template(g["milestones"], GLOBAL_MILESTONE_TEMPLATES)
+    g["milestones"] = _refresh_from_template(g["milestones"], GLOBAL_MILESTONE_TEMPLATES, scope="global", scope_id="_")
 
 
 def ensure_dimension_block(data, dim_id, themed_overrides=None):
@@ -64,7 +83,10 @@ def ensure_dimension_block(data, dim_id, themed_overrides=None):
     block.setdefault("milestones", [])
     block.setdefault("insights", [])
     block.setdefault("custom", [])
-    block["milestones"] = _refresh_from_template(block["milestones"], DIM_MILESTONE_TEMPLATES, themed_overrides)
+    block["milestones"] = _refresh_from_template(
+        block["milestones"], DIM_MILESTONE_TEMPLATES, themed_overrides,
+        scope="dim", scope_id=dim_id,
+    )
     return block
 
 

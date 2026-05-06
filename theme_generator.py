@@ -12,15 +12,48 @@ from achievement_templates import DIM_MILESTONE_TEMPLATES
 log = logging.getLogger("progressradar.theme")
 
 
-SYSTEM = """你是个写诗的人。给定一个追踪维度（标签 + 阶段路径 + 简介），为它的 13 个里程碑成就量身写"四字中文诗化"标题。
+SYSTEM = """你是个写诗的人 + 视觉概念设计师。给定一个追踪维度（标签 + 阶段路径），为它的 13 个里程碑成就量身：
+(a) 写"四字中文诗化"标题
+(b) 写一句中文文学化描述
+(c) 写一段英文 visual_concept — 用于驱动文生图模型生成"该成就的卡牌插画"
 
 要求：
-1. 完全围绕该维度的具体主题来想，不要套通用模板。比如"早起习惯"维度的"第一次"可以叫「闻鸡」「曦光」「晨拓」；"体测"维度可以叫「破汗」「试锋」；"保研夏令营"可以叫「窥门」「探径」。
-2. **每个 title 必须 4 个字**，意境优先，让人一看就觉得有戏。可以借古文、典故、自然意象、武侠仙侠风。
-3. description 一句话（最多 18 字），文学化口吻（"踏上 XX 之径""推开 XX 之门"），不要平铺直叙。
-4. 13 个 milestone 的语义大类是固定的：第一条记录 / 累计 10 / 累计 20 / 累计 50 / 离开初始阶段 / 到达中间阶段 / 到达最终阶段 / 进入第 2 周期 / 连续 3 天 / 连续 7 天 / 跨度 30 天 / 跨度 90 天 / 阶段演化。所以同一维度内 13 个 title 要互相区分，不重复，并形成由浅入深的递进感。
-5. 输出严格 JSON：{"items":[{"id":"dim_first","title":"...","description":"..."}, ...]}，13 项必须齐全。
-6. 不要输出 JSON 以外的内容。"""
+
+A. 标题 (title)：
+- 完全围绕该维度的具体主题，不要套通用模板。"早起"可以叫「闻鸡」「曦光」「晨拓」；"体测"叫「破汗」「试锋」；"保研夏令营"叫「窥门」「探径」
+- 必须 4 个字，意境优先，可借古文/典故/自然/武侠仙侠风
+- 13 个 title 互相区分，由浅入深递进
+
+B. 描述 (description)：
+- 一句话（最多 18 字），文学化口吻
+- 例："踏上 XX 之径"、"推开 XX 之门"，不要平铺直叙
+
+C. **视觉概念 (visual_concept)** ⭐ — 这是关键：
+- **必须用英文写**（图模型只懂英文）
+- 描述一个能代表该成就含义的具体画面：物体 + 场景 + 光影
+- 不要含字 / 字母 / 数字 / 文字 / 标志 / logo
+- 30 词以内
+- 围绕维度主题来想：
+  · 早起习惯 dim_first → "first ray of sunlight breaking over rooftops at dawn, single bird in flight"
+  · 体测 dim_streak7 → "seven barbells aligned in row, stadium lights glowing on each"
+  · 保研夏令营 dim_finale → "single figure standing before grand academy gates, scroll in hand"
+  · Conformal Prediction dim_reshape → "geometric crystal lattice reforming into new shape, mathematical elegance"
+- 不要套用千篇一律的视觉，要紧贴维度具体内容
+
+13 个 milestone 的语义大类（id 固定）：
+- dim_first: 首条记录
+- dim_10/20/50: 累计 10/20/50 条
+- dim_hatch: 离开初始阶段
+- dim_mid: 到达中间阶段
+- dim_finale: 到达最终阶段
+- dim_cycle2: 进入第 2 周期
+- dim_streak3/7: 连续 3/7 天
+- dim_active30/90: 跨度 30/90 天
+- dim_reshape: 阶段演化
+
+输出严格 JSON：
+{"items":[{"id":"dim_first","title":"…","description":"…","visual_concept":"…"}, …]}
+13 项齐全。不要输出 JSON 以外的内容。"""
 
 
 SLOT_HINTS = {
@@ -66,17 +99,27 @@ def _extract_json(text):
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # 容错：截到最后一个完整的 } 或最后一个完整 item
     m = re.search(r"\{[\s\S]*\}", text)
     if m:
         try:
             return json.loads(m.group(0))
         except json.JSONDecodeError:
             pass
-    # 最后兜底：手动从行内 regex 提取所有完整的 {"id":"...","title":"...","description":"..."}
+    # 兜底：宽松正则从碎片里抓 id / title / description / visual_concept
     items = []
-    for mm in re.finditer(r'\{\s*"id"\s*:\s*"([^"]+)"\s*,\s*"title"\s*:\s*"([^"]+)"\s*,\s*"description"\s*:\s*"([^"]+)"\s*\}', text):
-        items.append({"id": mm.group(1), "title": mm.group(2), "description": mm.group(3)})
+    pat = re.compile(
+        r'\{\s*"id"\s*:\s*"(?P<id>[^"]+)"\s*,\s*'
+        r'"title"\s*:\s*"(?P<title>[^"]+)"\s*,\s*'
+        r'"description"\s*:\s*"(?P<desc>[^"]+)"'
+        r'(?:\s*,\s*"visual_concept"\s*:\s*"(?P<vc>[^"]+)")?'
+        r'\s*\}'
+    )
+    for mm in pat.finditer(text):
+        d = mm.groupdict()
+        item = {"id": d["id"], "title": d["title"], "description": d["desc"]}
+        if d.get("vc"):
+            item["visual_concept"] = d["vc"]
+        items.append(item)
     if items:
         return {"items": items}
     raise json.JSONDecodeError("无法解析", text, 0)
@@ -94,7 +137,7 @@ def generate_for_dimension(dim_label, phases, descs=None):
                 {"role": "user",   "content": user_prompt},
             ],
             response_format={"type": "json_object"},
-            max_tokens=3000,
+            max_tokens=4000,
         )
         raw = resp.choices[0].message.content or ""
         data = _extract_json(raw)
@@ -110,6 +153,10 @@ def generate_for_dimension(dim_label, phases, descs=None):
         sid = it.get("id")
         title = (it.get("title") or "").strip()
         desc = (it.get("description") or "").strip()
+        vc = (it.get("visual_concept") or "").strip()
         if sid in valid_ids and title and desc:
-            out[sid] = {"title": title, "description": desc}
+            entry = {"title": title, "description": desc}
+            if vc:
+                entry["visual_concept"] = vc
+            out[sid] = entry
     return out

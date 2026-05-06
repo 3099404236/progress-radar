@@ -12,6 +12,7 @@ import ai_processor
 import achievement_store
 import achievement_checker
 import raw_archive
+import image_generator
 
 log = logging.getLogger("progressradar.api")
 
@@ -32,11 +33,24 @@ def _heat_grid(entries, days=35):
     return [counts.get(start + timedelta(days=i), 0) for i in range(days)]
 
 
+def _annotate_image_status(slots):
+    """根据磁盘存在情况修正 image_status（防止后台线程崩溃后状态不一致）"""
+    for s in slots:
+        iid = s.get("image_id")
+        if iid and image_generator.has_image(iid):
+            s["image_status"] = "ready"
+        elif s.get("image_status") == "ready":
+            s["image_status"] = "missing"
+
+
 def _summarize_block(block):
     """成就块概览（每个维度页 + 全局都需要）"""
     ms = block.get("milestones", [])
     ins = block.get("insights", [])
     cust = block.get("custom", [])
+    _annotate_image_status(ms)
+    _annotate_image_status(ins)
+    _annotate_image_status(cust)
     unlocked_ms = [m for m in ms if m.get("unlocked_at")]
     unlocked_cust = [c for c in cust if c.get("unlocked_at")]
     next_locked = next((m for m in ms if not m.get("unlocked_at")), None)
@@ -269,13 +283,62 @@ class API:
             log.exception("get_achievements 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
-    def create_custom_achievement(self, dimension_id, title, condition_text, rarity="rare"):
+    def create_custom_achievement(self, dimension_id, title, condition_text, rarity="rare", visual_concept=""):
         try:
             data = data_store.load()
-            item = achievement_checker.add_custom(dimension_id, title, condition_text, rarity, data)
+            item = achievement_checker.add_custom(dimension_id, title, condition_text, rarity, visual_concept, data)
             return json.dumps({"status": "ok", "item": item}, ensure_ascii=False)
         except Exception as e:
             log.exception("create_custom_achievement 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    # ---------- 卡面图 ----------
+
+    def get_card_image(self, image_id):
+        """返回 data URL；图不存在返回空字符串"""
+        try:
+            url = image_generator.read_as_data_url(image_id)
+            return json.dumps({"status": "ok", "data_url": url or "", "ready": bool(url)}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("get_card_image 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    def regenerate_card_image(self, image_id, visual_concept, rarity="common"):
+        """强制重新生成（覆盖旧图）"""
+        try:
+            path = image_generator.generate(image_id, visual_concept, rarity, force=True)
+            url = image_generator.read_as_data_url(image_id) if path else None
+            return json.dumps({"status": "ok" if path else "error", "data_url": url or ""}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("regenerate_card_image 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    def warm_card_images(self):
+        """对已解锁但还没图的成就，批量补生成（异步触发）"""
+        try:
+            data = data_store.load()
+            ach = achievement_store.load(data)
+            queued = 0
+            def kick(slot):
+                nonlocal queued
+                if slot.get("unlocked_at") and slot.get("visual_concept") and slot.get("image_id"):
+                    if not image_generator.has_image(slot["image_id"]):
+                        slot["image_status"] = "inflight"
+                        image_generator.generate_async(slot["image_id"], slot["visual_concept"], slot.get("rarity", "common"))
+                        queued += 1
+            for slot in ach.get("global", {}).get("milestones", []):
+                kick(slot)
+            for did, block in ach.get("per_dimension", {}).items():
+                for slot in block.get("milestones", []):
+                    kick(slot)
+                for slot in block.get("insights", []):
+                    kick(slot)
+                for slot in block.get("custom", []):
+                    kick(slot)
+            achievement_store.save(ach)
+            return json.dumps({"status": "ok", "queued": queued}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("warm_card_images 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     def unlock_custom_achievement(self, dimension_id, title):

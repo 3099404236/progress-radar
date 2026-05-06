@@ -178,19 +178,74 @@ function achievementsBlock(achv, dimId, isGlobal) {
   return h;
 }
 
+// 图片缓存 + 异步加载
+const imageCache = {};   // image_id -> dataURL ("" 表示已查过但还没好)
+const imageFetching = new Set();
+let imagePollTimer = null;
+
+async function fetchCardImage(imageId, imgEl) {
+  if (!imageId || imageFetching.has(imageId)) return;
+  if (imageCache[imageId]) {
+    if (imgEl) imgEl.src = imageCache[imageId];
+    return;
+  }
+  imageFetching.add(imageId);
+  try {
+    const r = JSON.parse(await window.pywebview.api.get_card_image(imageId));
+    imageFetching.delete(imageId);
+    if (r.ready && r.data_url) {
+      imageCache[imageId] = r.data_url;
+      // 找页面上所有等同 image_id 的 img 元素更新
+      document.querySelectorAll(`img[data-img-id="${imageId}"]`).forEach(el => {
+        el.src = r.data_url;
+        el.classList.add("loaded");
+      });
+    }
+  } catch (e) {
+    imageFetching.delete(imageId);
+  }
+}
+
+function ensureImagePolling() {
+  if (imagePollTimer) return;
+  imagePollTimer = setInterval(() => {
+    document.querySelectorAll("img[data-img-id]:not(.loaded)").forEach(el => {
+      const id = el.dataset.imgId;
+      if (id && !imageCache[id]) fetchCardImage(id, el);
+    });
+  }, 6000);
+}
+
+function cardImageHTML(item, isUnlocked) {
+  const iid = item.image_id || "";
+  if (!isUnlocked) {
+    return `<div class="card-img-wrap"><div class="card-img-locked">？</div></div>`;
+  }
+  // 已锁定但有 image_id：尝试展示，未生成完显示 loading
+  return `<div class="card-img-wrap">
+    <img class="card-img" data-img-id="${escapeHTML(iid)}" alt="${escapeHTML(item.title || '')}" />
+    <div class="card-img-loading"><div class="spinner"></div><span>生成中</span></div>
+  </div>`;
+}
+
 function achCard(item, kind) {
   const rar = rarityClass[item.rarity] || "common";
   const title = escapeHTML(item.title || "");
   const desc = escapeHTML(item.description || item.condition_text || "");
   const tag = kind === "insight" ? "洞察" : kind === "custom" ? "自定" : kind === "custom-locked" ? "未达" : "里程碑";
-  const lock = kind === "custom-locked" ? " locked" : "";
+  const isLocked = kind === "custom-locked";
+  const lock = isLocked ? " locked" : "";
   const rarText = rarityLabel[item.rarity] || "寻常";
   const date = item.unlocked_at ? `<div class="ach-card-date">${escapeHTML(item.unlocked_at)}</div>` : "";
-  return `<div class="ach-card ${rar}${lock}" title="${desc}">
-    <div class="ach-card-top"><span class="ach-card-tag">${tag}</span><span class="ach-card-rar">${rarText}</span></div>
-    <div class="ach-card-title">${title}</div>
-    <div class="ach-card-desc">${desc}</div>
-    ${date}
+  const dataAttrs = `data-card-id="${escapeHTML(item.image_id || '')}" data-card-vc="${escapeHTML(item.visual_concept || '')}" data-card-rarity="${escapeHTML(item.rarity || 'common')}"`;
+  return `<div class="ach-card ${rar}${lock}" ${dataAttrs} title="${desc}">
+    ${cardImageHTML(item, !isLocked)}
+    <div class="ach-card-info">
+      <div class="ach-card-top"><span class="ach-card-tag">${tag}</span><span class="ach-card-rar">${rarText}</span></div>
+      <div class="ach-card-title">${title}</div>
+      <div class="ach-card-desc">${desc}</div>
+      ${date}
+    </div>
   </div>`;
 }
 
@@ -347,6 +402,101 @@ function render() {
       }
     });
   });
+
+  // 卡牌点击 → 大图 modal
+  app.querySelectorAll(".ach-card").forEach(card => {
+    if (card.classList.contains("locked")) return;
+    card.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openCardModal(card);
+    });
+  });
+
+  // 启动一轮异步加载图片
+  app.querySelectorAll("img[data-img-id]").forEach(img => {
+    const iid = img.dataset.imgId;
+    if (imageCache[iid]) {
+      img.src = imageCache[iid];
+      img.classList.add("loaded");
+    } else {
+      fetchCardImage(iid, img);
+    }
+  });
+  ensureImagePolling();
+}
+
+function openCardModal(cardEl) {
+  const iid = cardEl.dataset.cardId;
+  const vc = cardEl.dataset.cardVc;
+  const rarity = cardEl.dataset.cardRarity;
+  const titleEl = cardEl.querySelector(".ach-card-title");
+  const descEl = cardEl.querySelector(".ach-card-desc");
+  const dateEl = cardEl.querySelector(".ach-card-date");
+  const tagEl = cardEl.querySelector(".ach-card-tag");
+  const rarEl = cardEl.querySelector(".ach-card-rar");
+
+  const title = titleEl ? titleEl.textContent : "";
+  const desc = descEl ? descEl.textContent : "";
+  const date = dateEl ? dateEl.textContent : "";
+  const tag = tagEl ? tagEl.textContent : "";
+  const rarText = rarEl ? rarEl.textContent : "";
+
+  const imgURL = imageCache[iid] || "";
+  const modal = document.createElement("div");
+  modal.className = "card-modal";
+  modal.innerHTML = `
+    <div class="card-modal-bg"></div>
+    <div class="card-modal-card ${rarityClass[rarity] || 'common'}">
+      <div class="card-modal-img-wrap">
+        ${imgURL
+          ? `<img class="card-modal-img loaded" src="${imgURL}" />`
+          : `<img class="card-modal-img" data-img-id="${escapeHTML(iid)}" />
+             <div class="card-img-loading"><div class="spinner big"></div><span>正在生成卡面…</span></div>`}
+      </div>
+      <div class="card-modal-info">
+        <div class="card-modal-tags"><span class="ach-card-tag">${escapeHTML(tag)}</span><span class="ach-card-rar">${escapeHTML(rarText)}</span></div>
+        <div class="card-modal-title">${escapeHTML(title)}</div>
+        <div class="card-modal-desc">${escapeHTML(desc)}</div>
+        ${date ? `<div class="ach-card-date">${escapeHTML(date)}</div>` : ""}
+        <div class="card-modal-actions">
+          ${vc ? `<button class="bar-link" data-regen>重新生成卡面</button>` : ""}
+          <button class="btn btn-secondary" data-close>关闭</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector(".card-modal-bg").addEventListener("click", () => modal.remove());
+  modal.querySelector("[data-close]").addEventListener("click", () => modal.remove());
+  document.addEventListener("keydown", function esc(e) {
+    if (e.key === "Escape") { modal.remove(); document.removeEventListener("keydown", esc); }
+  });
+
+  const regenBtn = modal.querySelector("[data-regen]");
+  if (regenBtn) {
+    regenBtn.addEventListener("click", async () => {
+      regenBtn.disabled = true; regenBtn.textContent = "重新生成中…";
+      try {
+        const r = JSON.parse(await window.pywebview.api.regenerate_card_image(iid, vc, rarity));
+        if (r.status === "ok" && r.data_url) {
+          imageCache[iid] = r.data_url;
+          modal.querySelector(".card-modal-img").src = r.data_url;
+          modal.querySelector(".card-modal-img").classList.add("loaded");
+          const ld = modal.querySelector(".card-img-loading");
+          if (ld) ld.style.display = "none";
+          regenBtn.textContent = "已替换 ✓";
+        } else {
+          regenBtn.textContent = "失败"; alert("失败：" + (r.message || ""));
+        }
+      } catch (err) { alert("错误：" + err); regenBtn.disabled = false; regenBtn.textContent = "重新生成卡面"; }
+    });
+  }
+
+  // 弹层内的图片如果还没就绪，启动 fetch
+  modal.querySelectorAll("img[data-img-id]:not(.loaded)").forEach(img => {
+    fetchCardImage(img.dataset.imgId, img);
+  });
 }
 
 async function addCustomFlow(dimId) {
@@ -355,9 +505,10 @@ async function addCustomFlow(dimId) {
   const cond = prompt("解锁条件描述（一句话）：");
   if (!cond) return;
   const rarity = prompt("稀有度：common / uncommon / rare / epic / legendary", "rare") || "rare";
+  const vc = prompt("（可选）卡面视觉概念，英文，描述具体画面（用于生图）：", "") || "";
   if (!window.pywebview || !window.pywebview.api) return;
   try {
-    const r = JSON.parse(await window.pywebview.api.create_custom_achievement(dimId, title, cond, rarity));
+    const r = JSON.parse(await window.pywebview.api.create_custom_achievement(dimId, title, cond, rarity, vc));
     if (r.status === "ok") load();
     else alert("失败：" + (r.message || ""));
   } catch (e) { alert("错误：" + e); }
@@ -415,6 +566,18 @@ document.getElementById("weekly-btn").addEventListener("click", async () => {
   }
 });
 
-window.addEventListener("pywebviewready", load);
-setTimeout(() => { if (window.pywebview && window.pywebview.api && !dims.length) load(); }, 1000);
+async function warmCards() {
+  if (!window.pywebview || !window.pywebview.api) return;
+  try {
+    const r = JSON.parse(await window.pywebview.api.warm_card_images());
+    if (r.status === "ok" && r.queued > 0) console.log(`卡面补生：已排 ${r.queued} 张`);
+  } catch (e) { /* ignore */ }
+}
+
+async function bootstrap() {
+  await load();
+  warmCards();
+}
+window.addEventListener("pywebviewready", bootstrap);
+setTimeout(() => { if (window.pywebview && window.pywebview.api && !dims.length) bootstrap(); }, 1000);
 setInterval(load, 30000);
