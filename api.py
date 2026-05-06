@@ -11,6 +11,7 @@ import data_store
 import ai_processor
 import achievement_store
 import achievement_checker
+import raw_archive
 
 log = logging.getLogger("progressradar.api")
 
@@ -77,7 +78,10 @@ class API:
             text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
             seen = data.setdefault("meta", {}).setdefault("seen_hashes", [])
             if text_hash in seen:
-                return json.dumps({"status": "ok", "action": "skip", "reason": "重复内容（已提交过）"}, ensure_ascii=False)
+                result = {"status": "ok", "action": "skip", "reason": "重复内容（已提交过）"}
+                try: raw_archive.append(text, result)
+                except Exception: log.exception("归档失败")
+                return json.dumps(result, ensure_ascii=False)
 
             result = ai_processor.process(text, data)
 
@@ -95,6 +99,11 @@ class API:
                         result["unlocked"] = newly
                 except Exception:
                     log.exception("成就检查失败")
+
+            try:
+                raw_archive.append(text, result)
+            except Exception:
+                log.exception("归档失败")
 
             return json.dumps(result, ensure_ascii=False)
         except Exception as e:
@@ -285,6 +294,43 @@ class API:
             return json.dumps({"status": "ok", "unlocked": newly}, ensure_ascii=False)
         except Exception as e:
             log.exception("recheck 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    # ---------- 原始归档 ----------
+
+    def get_raw_stats(self):
+        try:
+            return json.dumps({"status": "ok", **raw_archive.stats()}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("get_raw_stats 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    def get_raw_recent(self, limit=20):
+        try:
+            items = raw_archive.read_all(limit=limit)
+            for it in items:
+                t = it.get("text", "")
+                if len(t) > 800:
+                    it["text"] = t[:800] + " …[已截断，原文存于 jsonl]"
+            return json.dumps({"status": "ok", "items": items}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("get_raw_recent 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    def export_raw_to_desktop(self):
+        try:
+            home = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+            desktop = os.path.join(home, "Desktop")
+            if not os.path.isdir(desktop):
+                desktop = os.path.join(home, "OneDrive", "Desktop")
+            if not os.path.isdir(desktop):
+                desktop = home
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dst = os.path.join(desktop, f"progressradar_raw_{ts}.jsonl")
+            count, path = raw_archive.export_to(dst)
+            return json.dumps({"status": "ok", "count": count, "path": path}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("export_raw 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     # ---------- 手动编辑 ----------

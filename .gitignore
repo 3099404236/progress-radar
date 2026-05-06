@@ -7,6 +7,7 @@ secrets.local.py
 # 用户数据 / 运行时产物
 data/progress.json
 data/achievements.json
+data/raw_submissions.jsonl
 data/app.log*
 data/weekly/
 data/*.tmp

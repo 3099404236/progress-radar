@@ -3,11 +3,10 @@ const phaseShades = ["#4a9bee", "#f0c870", "#8ad08f", "#d8a0e8", "#f08585", "#6c
 const rarityClass = { common: "common", uncommon: "uncommon", rare: "rare", epic: "epic", legendary: "legendary" };
 
 let dims = [];
-let selected = null;       // dim id when in detail view
+let selected = null;       // dim id of expanded card; null = none expanded
 let cycleFilter = "current";
 let weeklyVisible = false;
 let weeklyText = null;
-let view = "overview";     // 'overview' | 'detail'
 let globalAchievements = null;
 
 function escapeHTML(s) {
@@ -202,9 +201,44 @@ function metricRow(d) {
   </div>`;
 }
 
-// ---------- 总览 ----------
+// ---------- 详情面板（嵌入到卡片下方） ----------
 
-function renderOverview() {
+function renderDetailPanel(d) {
+  const versionInfo = (d.phase_versions || []).length > 1
+    ? ` · 阶段已演化 ${d.phase_versions.length - 1} 次`
+    : "";
+  let h = `<div class="dim-detail" data-detail="${escapeHTML(d.id)}">
+    <div class="dim-detail-head">
+      <div class="dim-detail-title">${escapeHTML(d.label)}${d.created_by === "auto" ? ' <span class="dim-badge" style="position:static;margin-left:6px">auto</span>' : ""}</div>
+      <button class="bar-link" data-collapse>收起 ▲</button>
+    </div>`;
+  h += metricRow(d);
+  h += `<div class="dim-detail-sub">主阶段：${escapeHTML((d.phases || [])[d.primary_phase] || "—")} · 共 ${d.total_entries || 0} 条记录${versionInfo}</div>`;
+  h += `<h4 class="detail-h">阶段热力分布</h4>${phaseDistribution(d)}`;
+  h += `<h4 class="detail-h">每日活跃（近 90 天）</h4>${heat90(d)}`;
+  h += `<h4 class="detail-h">最近记录</h4>`;
+  if (!(d.entries || []).length) {
+    h += `<div class="empty">暂无记录</div>`;
+  } else {
+    h += `<div class="entries-wrap">`;
+    for (const e of d.entries) {
+      const phaseName = (d.phases || [])[e.phase_index] || "?";
+      h += `<div class="entry">
+        <div class="entry-date">${escapeHTML(e.d)}</div>
+        <div class="entry-text">${escapeHTML(e.t)}<span class="entry-phase">${escapeHTML(phaseName)}</span>${e.tag ? `<span class="entry-tag">${escapeHTML(e.tag)}</span>` : ""}</div>
+      </div>`;
+    }
+    h += `</div>`;
+  }
+  h += `<div class="detail-ach">${achievementsBlock(d.achievements, d.id, false)}</div>`;
+  h += `</div>`;
+  return h;
+}
+
+// ---------- 总览（单页，详情就地展开） ----------
+
+function render() {
+  const app = document.getElementById("app");
   const totalEntries = dims.reduce((s, x) => s + (x.total_entries || 0), 0);
   const activeDims = dims.filter(x => (x.total_entries || 0) > 0).length;
   const thisWeek = dims.reduce((s, x) => s + (x.heat || []).slice(-7).reduce((a, b) => a + b, 0), 0);
@@ -218,7 +252,9 @@ function renderOverview() {
   if (!dims.length) {
     h += `<div class="empty">还没有任何维度。点击右上角 <b>+ 粘贴</b> 添加第一条。</div>`;
   } else {
+    // 找出选中维度在网格里的"行结尾位置"，详情插在该行之后
     h += `<div class="dims">`;
+    // 先全部画卡片，详情区作为 grid 的整行 child 插在选中卡片之后
     for (const dm of dims) {
       const stageName = (dm.phases || [])[dm.primary_phase] || "—";
       const total = dm.phases ? dm.phases.length : 0;
@@ -226,7 +262,8 @@ function renderOverview() {
       const cycleBadge = (dm.current_cycle || 1) > 1 ? `<div class="dim-cycle-badge">#${dm.current_cycle}</div>` : "";
       const ach = dm.achievements || {};
       const achPill = `<span class="dim-ach-pill">${ach.milestone_unlocked || 0}/${ach.milestone_total || 13}</span>`;
-      h += `<div class="dim-card" data-id="${escapeHTML(dm.id)}">
+      const isActive = dm.id === selected ? " active" : "";
+      h += `<div class="dim-card${isActive}" data-id="${escapeHTML(dm.id)}">
         ${autoBadge}${cycleBadge}
         <div class="dim-label">${escapeHTML(dm.label)}</div>
         <div class="dim-stage">主阶段：${escapeHTML(stageName)}</div>
@@ -240,86 +277,45 @@ function renderOverview() {
       </div>`;
     }
     h += `</div>`;
+
+    // 详情面板放在网格下方
+    if (selected) {
+      const d = dims.find(x => x.id === selected);
+      if (d) h += renderDetailPanel(d);
+    }
   }
 
-  // 全局成就
   if (globalAchievements && (globalAchievements.milestone_total || 0) > 0) {
     h += achievementsBlock(globalAchievements, "__global__", true);
   }
 
-  return h;
-}
+  app.innerHTML = h;
 
-// ---------- 维度详情 ----------
-
-function renderDetail() {
-  const d = dims.find(x => x.id === selected);
-  if (!d) {
-    view = "overview";
-    return renderOverview();
-  }
-
-  const versionInfo = (d.phase_versions || []).length > 1
-    ? ` · 阶段已演化 ${d.phase_versions.length - 1} 次`
-    : "";
-
-  let h = `<div class="detail-bar">
-    <button class="bar-link" id="back-overview">← 返回总览</button>
-    <div class="detail-bar-title">${escapeHTML(d.label)}${d.created_by === "auto" ? ' <span class="dim-badge" style="position:static;margin-left:6px">auto</span>' : ""}</div>
-  </div>`;
-
-  h += metricRow(d);
-
-  h += `<div class="detail">
-    <div class="detail-sub">主阶段：${escapeHTML((d.phases || [])[d.primary_phase] || "—")} · 共 ${d.total_entries || 0} 条记录${versionInfo}</div>
-    <h4 class="detail-h">阶段热力分布</h4>
-    ${phaseDistribution(d)}
-    <h4 class="detail-h">每日活跃（近 90 天）</h4>
-    ${heat90(d)}
-  </div>`;
-
-  h += `<div class="detail">
-    <h4 class="detail-h">最近记录</h4>`;
-  if (!(d.entries || []).length) {
-    h += `<div class="empty">暂无记录</div>`;
-  } else {
-    for (const e of d.entries) {
-      const phaseName = (d.phases || [])[e.phase_index] || "?";
-      h += `<div class="entry">
-        <div class="entry-date">${escapeHTML(e.d)}</div>
-        <div class="entry-text">${escapeHTML(e.t)}<span class="entry-phase">${escapeHTML(phaseName)}</span>${e.tag ? `<span class="entry-tag">${escapeHTML(e.tag)}</span>` : ""}</div>
-      </div>`;
-    }
-  }
-  h += `</div>`;
-
-  h += `<div class="detail">${achievementsBlock(d.achievements, d.id, false)}</div>`;
-
-  return h;
-}
-
-// ---------- 路由 / 事件 ----------
-
-function render() {
-  const app = document.getElementById("app");
-  app.innerHTML = (view === "detail") ? renderDetail() : renderOverview();
-
-  if (view === "overview") {
-    app.querySelectorAll(".dim-card").forEach(card => {
-      card.addEventListener("click", () => {
-        selected = card.dataset.id;
-        view = "detail";
-        render();
-        document.querySelector(".dash-body").scrollTop = 0;
-      });
+  app.querySelectorAll(".dim-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const id = card.dataset.id;
+      const wasOpen = selected === id;
+      selected = wasOpen ? null : id;
+      render();
+      // 平滑滚动让详情区进入视口
+      if (!wasOpen) {
+        setTimeout(() => {
+          const panel = document.querySelector(`[data-detail="${id}"]`);
+          if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 30);
+      }
     });
-  } else {
-    const back = document.getElementById("back-overview");
-    if (back) back.addEventListener("click", () => { view = "overview"; selected = null; render(); });
-  }
+  });
+
+  const collapseBtn = app.querySelector("[data-collapse]");
+  if (collapseBtn) collapseBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selected = null;
+    render();
+  });
 
   app.querySelectorAll("[data-add-custom]").forEach(btn => {
-    btn.addEventListener("click", () => addCustomFlow(btn.dataset.addCustom));
+    btn.addEventListener("click", (e) => { e.stopPropagation(); addCustomFlow(btn.dataset.addCustom); });
   });
 }
 
@@ -361,6 +357,18 @@ document.getElementById("paste-btn").addEventListener("click", async () => {
   if (!window.pywebview || !window.pywebview.api) return;
   try { await window.pywebview.api.show_paste(); }
   catch (e) { alert("打开粘贴窗口失败：" + e); }
+});
+
+document.getElementById("export-raw-btn").addEventListener("click", async () => {
+  if (!window.pywebview || !window.pywebview.api) return;
+  try {
+    const s = JSON.parse(await window.pywebview.api.get_raw_stats());
+    const ok = confirm(`已归档 ${s.count || 0} 条粘贴记录（${(s.size_bytes/1024).toFixed(1)} KB）。\n范围：${s.first || "—"} ~ ${s.last || "—"}\n\n导出到桌面？`);
+    if (!ok) return;
+    const r = JSON.parse(await window.pywebview.api.export_raw_to_desktop());
+    if (r.status === "ok") alert(`已导出 ${r.count} 条到：\n${r.path}`);
+    else alert("失败：" + (r.message || ""));
+  } catch (e) { alert("错误：" + e); }
 });
 
 document.getElementById("weekly-btn").addEventListener("click", async () => {

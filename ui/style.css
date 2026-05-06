@@ -298,9 +298,21 @@ button { font-family: inherit; cursor: pointer; }
 .weekly-section h3 { font-size: 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; color: var(--color-text-primary); }
 .weekly-section pre { white-space: pre-wrap; font-family: inherit; font-size: 12.5px; line-height: 1.6; color: var(--color-text-secondary); }
 
-/* ---------- 维度详情视图 ---------- */
-.detail-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.detail-bar-title { font-size: 18px; font-weight: 600; color: var(--color-text-primary); }
+/* ---------- 维度详情（就地展开） ---------- */
+.dim-detail {
+  background: var(--color-background-secondary);
+  border: 0.5px solid var(--color-border-info);
+  border-radius: var(--border-radius-lg);
+  padding: 20px 24px;
+  margin: -8px 0 24px;
+  animation: detailIn .18s ease-out;
+}
+@keyframes detailIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.dim-detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.dim-detail-title { font-size: 17px; font-weight: 600; color: var(--color-text-primary); }
+.dim-detail-sub { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px; }
+.detail-ach { margin-top: 22px; padding-top: 18px; border-top: 0.5px solid var(--color-border-tertiary); }
+.entries-wrap { max-height: 280px; overflow-y: auto; padding-right: 4px; }
 .detail-h { font-size: 12.5px; font-weight: 500; color: var(--color-text-secondary); margin: 18px 0 10px; text-transform: uppercase; letter-spacing: 0.4px; }
 .dstat-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
 .dstat { font-size: 12px; padding: 6px 12px; border-radius: 999px; background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); color: var(--color-text-secondary); }
