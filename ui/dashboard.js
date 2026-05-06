@@ -360,7 +360,37 @@ function renderDetailPanel(d) {
   return h;
 }
 
-// ---------- 总览（单页，详情就地展开） ----------
+// ---------- 总览（三栏：必做 / 主线 / 支线） ----------
+
+const TRACK_DEF = [
+  { key: "must", title: "必做", subtitle: "每天的基本盘 · 喝水/吃饭/作息" },
+  { key: "main", title: "主线", subtitle: "核心目标 · 研究/竞赛/考试" },
+  { key: "side", title: "支线", subtitle: "辅助探索 · 工具/兴趣/低频" },
+];
+
+function dimCardHTML(dm, posIndex) {
+  const stageName = (dm.phases || [])[dm.primary_phase] || "—";
+  const total = dm.phases ? dm.phases.length : 0;
+  const autoBadge = dm.created_by === "auto" ? `<div class="dim-badge">auto</div>` : "";
+  const cycleBadge = (dm.current_cycle || 1) > 1 ? `<div class="dim-cycle-badge">#${dm.current_cycle}</div>` : "";
+  const ach = dm.achievements || {};
+  const achPill = `<span class="dim-ach-pill">${ach.milestone_unlocked || 0}/${ach.milestone_total || 13}</span>`;
+  const isActive = dm.id === selected ? " active" : "";
+  // posIndex 越小，越华丽。0=金色光环，1=蓝色光晕，2 起为常规
+  const tier = posIndex === 0 ? " tier-0" : posIndex === 1 ? " tier-1" : posIndex === 2 ? " tier-2" : "";
+  return `<div class="dim-card${isActive}${tier}" draggable="true" data-id="${escapeHTML(dm.id)}">
+    ${autoBadge}${cycleBadge}
+    <div class="dim-label">${escapeHTML(dm.label)}</div>
+    <div class="dim-stage">主阶段：${escapeHTML(stageName)}</div>
+    <div class="dim-ring-row">
+      ${ringSegmented(dm, 56)}
+      <div class="dim-stats">
+        <b>${dm.total_entries || 0}</b> 条 · ${total} 阶段<br>
+        ${achPill} 里程碑
+      </div>
+    </div>
+  </div>`;
+}
 
 function render() {
   const app = document.getElementById("app");
@@ -377,33 +407,43 @@ function render() {
   if (!dims.length) {
     h += `<div class="empty">还没有任何维度。点击右上角 <b>+ 粘贴</b> 添加第一条。</div>`;
   } else {
-    // 找出选中维度在网格里的"行结尾位置"，详情插在该行之后
-    h += `<div class="dims">`;
-    // 先全部画卡片，详情区作为 grid 的整行 child 插在选中卡片之后
+    // 三栏分组
+    const buckets = { must: [], main: [], side: [] };
     for (const dm of dims) {
-      const stageName = (dm.phases || [])[dm.primary_phase] || "—";
-      const total = dm.phases ? dm.phases.length : 0;
-      const autoBadge = dm.created_by === "auto" ? `<div class="dim-badge">auto</div>` : "";
-      const cycleBadge = (dm.current_cycle || 1) > 1 ? `<div class="dim-cycle-badge">#${dm.current_cycle}</div>` : "";
-      const ach = dm.achievements || {};
-      const achPill = `<span class="dim-ach-pill">${ach.milestone_unlocked || 0}/${ach.milestone_total || 13}</span>`;
-      const isActive = dm.id === selected ? " active" : "";
-      h += `<div class="dim-card${isActive}" data-id="${escapeHTML(dm.id)}">
-        ${autoBadge}${cycleBadge}
-        <div class="dim-label">${escapeHTML(dm.label)}</div>
-        <div class="dim-stage">主阶段：${escapeHTML(stageName)}</div>
-        <div class="dim-ring-row">
-          ${ringSegmented(dm, 56)}
-          <div class="dim-stats">
-            <b>${dm.total_entries || 0}</b> 条 · ${total} 阶段<br>
-            ${achPill} 里程碑
-          </div>
+      const t = (buckets[dm.track] !== undefined) ? dm.track : "main";
+      buckets[t].push(dm);
+    }
+    // 同栏按 (rank ASC, created_at DESC) 排
+    for (const k of Object.keys(buckets)) {
+      buckets[k].sort((a, b) => {
+        const ar = a.rank == null ? 9999 : a.rank;
+        const br = b.rank == null ? 9999 : b.rank;
+        if (ar !== br) return ar - br;
+        return (b.created_at || "").localeCompare(a.created_at || "");
+      });
+    }
+
+    h += `<div class="track-grid">`;
+    for (const td of TRACK_DEF) {
+      const list = buckets[td.key];
+      h += `<div class="track-col" data-track="${td.key}">
+        <div class="track-head">
+          <div class="track-title">${td.title}</div>
+          <div class="track-sub">${td.subtitle}</div>
+          <div class="track-count">${list.length}</div>
         </div>
-      </div>`;
+        <div class="track-drop" data-track="${td.key}">`;
+      if (!list.length) {
+        h += `<div class="track-empty">把卡片拖过来</div>`;
+      }
+      for (let i = 0; i < list.length; i++) {
+        h += dimCardHTML(list[i], i);
+      }
+      h += `</div></div>`;
     }
     h += `</div>`;
 
-    // 详情面板放在网格下方
+    // 详情面板放在三栏下方
     if (selected) {
       const d = dims.find(x => x.id === selected);
       if (d) h += renderDetailPanel(d);
@@ -416,13 +456,14 @@ function render() {
 
   app.innerHTML = h;
 
+  // 卡片点击展开详情；拖拽行为见 wireDragAndDrop
   app.querySelectorAll(".dim-card").forEach(card => {
-    card.addEventListener("click", () => {
+    card.addEventListener("click", (e) => {
+      if (card.classList.contains("dragging")) return;  // 拖动后短暂阻止 click
       const id = card.dataset.id;
       const wasOpen = selected === id;
       selected = wasOpen ? null : id;
       render();
-      // 平滑滚动让详情区进入视口
       if (!wasOpen) {
         setTimeout(() => {
           const panel = document.querySelector(`[data-detail="${id}"]`);
@@ -431,6 +472,8 @@ function render() {
       }
     });
   });
+
+  wireDragAndDrop();
 
   const collapseBtn = app.querySelector("[data-collapse]");
   if (collapseBtn) collapseBtn.addEventListener("click", (e) => {
@@ -560,6 +603,96 @@ function openCardModal(cardEl) {
   modal.querySelectorAll("img[data-img-id]:not(.loaded)").forEach(img => {
     fetchCardImage(img.dataset.imgId, img);
   });
+}
+
+// ---------- 拖拽：跨栏移动 / 同栏排序 ----------
+
+let dragSrcId = null;
+
+function wireDragAndDrop() {
+  document.querySelectorAll(".dim-card").forEach(card => {
+    card.addEventListener("dragstart", (e) => {
+      dragSrcId = card.dataset.id;
+      card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", dragSrcId); } catch (_) {}
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      document.querySelectorAll(".track-drop.over, .dim-card.drop-target").forEach(el => {
+        el.classList.remove("over");
+        el.classList.remove("drop-target");
+      });
+      // 拖完短暂保留 dragging class 阻止 click 误触发
+      setTimeout(() => card.classList.remove("dragging"), 50);
+    });
+  });
+
+  document.querySelectorAll(".track-drop").forEach(zone => {
+    zone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      zone.classList.add("over");
+      // 找最接近指针的卡片，标 drop-target（视觉指示）
+      const cards = [...zone.querySelectorAll(".dim-card:not(.dragging)")];
+      const after = cards.find(c => {
+        const r = c.getBoundingClientRect();
+        return e.clientY < r.top + r.height / 2;
+      });
+      zone.querySelectorAll(".dim-card.drop-target").forEach(el => el.classList.remove("drop-target"));
+      if (after) after.classList.add("drop-target");
+    });
+    zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      zone.classList.remove("over");
+      if (!dragSrcId) return;
+      const src = document.querySelector(`.dim-card[data-id="${dragSrcId}"]`);
+      if (!src) return;
+      const cards = [...zone.querySelectorAll(".dim-card:not(.dragging)")];
+      const after = cards.find(c => {
+        const r = c.getBoundingClientRect();
+        return e.clientY < r.top + r.height / 2;
+      });
+      if (after) zone.insertBefore(src, after);
+      else zone.appendChild(src);
+      dragSrcId = null;
+      persistTrackLayout();
+    });
+  });
+}
+
+async function persistTrackLayout() {
+  if (!window.pywebview || !window.pywebview.api) return;
+  const layout = { must: [], main: [], side: [] };
+  document.querySelectorAll(".track-drop").forEach(zone => {
+    const t = zone.dataset.track;
+    layout[t] = [...zone.querySelectorAll(".dim-card")].map(c => c.dataset.id);
+  });
+  try {
+    const r = JSON.parse(await window.pywebview.api.set_track_layout(JSON.stringify(layout)));
+    if (r.status === "ok") {
+      // 不整体重渲染，仅更新 dims 内存中的 track/rank，避免 DOM 闪烁
+      for (const t of ["must", "main", "side"]) {
+        layout[t].forEach((id, idx) => {
+          const dm = dims.find(x => x.id === id);
+          if (dm) { dm.track = t; dm.rank = idx; }
+        });
+      }
+      // 重新算 tier class（rank 0/1/2 视觉）
+      document.querySelectorAll(".track-drop").forEach(zone => {
+        [...zone.querySelectorAll(".dim-card")].forEach((c, idx) => {
+          c.classList.remove("tier-0", "tier-1", "tier-2");
+          if (idx === 0) c.classList.add("tier-0");
+          else if (idx === 1) c.classList.add("tier-1");
+          else if (idx === 2) c.classList.add("tier-2");
+        });
+        // 更新栏目计数
+        const head = zone.parentElement.querySelector(".track-count");
+        if (head) head.textContent = zone.querySelectorAll(".dim-card").length;
+      });
+    }
+  } catch (e) { console.warn("布局保存失败:", e); }
 }
 
 async function addCustomFlow(dimId) {

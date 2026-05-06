@@ -23,9 +23,31 @@ import config
 _lock = threading.Lock()
 
 
+_HABIT_KEYWORDS = ("习惯", "喝水", "吃饭", "饮食", "早起", "晚饭", "晚餐", "早餐", "睡眠",
+                   "运动", "锻炼", "刷牙", "记账", "阅读", "冥想", "走路", "跑步", "节食",
+                   "戒糖", "记日记", "口腔", "牙齿")
+
+
+def _classify_default_track(label, phases):
+    """新维度初始落在哪一栏"""
+    lbl = label or ""
+    if any(k in lbl for k in _HABIT_KEYWORDS):
+        return "must"
+    for p in phases or []:
+        n = p.get("name", "") if isinstance(p, dict) else str(p)
+        if "建立规律" in n or "内化自动" in n:
+            return "must"
+    return "main"
+
+
 def _migrate_dimension(dim):
     """把 v1 dim 迁移到 v2 schema（幂等）"""
     n_phases = len(dim.get("phases", []))
+
+    if "track" not in dim:
+        dim["track"] = _classify_default_track(dim.get("label", ""), dim.get("phases", []))
+    if "rank" not in dim:
+        dim["rank"] = 9999  # 大值兜底，前端按 (rank, created_at) 排，新创建的会落到底端
 
     if "phase_versions" not in dim:
         dim["phase_versions"] = [{

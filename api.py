@@ -201,8 +201,11 @@ class API:
                 "heat": _heat_grid(visible),
                 "heat_90": _heat_grid(visible, 90),
                 "created_by": dim.get("created_by", "preset"),
+                "created_at": dim.get("created_at", ""),
                 "milestones": dim.get("milestones", []),
                 "achievements": ach_summary,
+                "track": dim.get("track", "main"),
+                "rank": dim.get("rank", 9999),
             })
         meta = data.get("meta", {})
         return json.dumps({
@@ -507,6 +510,29 @@ class API:
             return json.dumps({"status": "ok", "count": count, "path": path}, ensure_ascii=False)
         except Exception as e:
             log.exception("export_raw 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    # ---------- 主线/支线/必做 三栏布局 ----------
+
+    def set_track_layout(self, layout_json):
+        """layout_json: '{"must":["id1","id2"],"main":["id3"],"side":["id4"]}'
+        前端拖完整理出每栏的有序 ID 列表，整体覆盖。"""
+        try:
+            layout = json.loads(layout_json) if isinstance(layout_json, str) else layout_json
+            data = data_store.load()
+            updated = 0
+            for track in ("must", "main", "side"):
+                ids = layout.get(track) or []
+                for idx, did in enumerate(ids):
+                    d = data["dimensions"].get(did)
+                    if d:
+                        d["track"] = track
+                        d["rank"] = idx
+                        updated += 1
+            data_store.save(data)
+            return json.dumps({"status": "ok", "updated": updated}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("set_track_layout 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     # ---------- 手动编辑 ----------
