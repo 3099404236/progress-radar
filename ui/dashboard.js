@@ -831,6 +831,31 @@ document.querySelectorAll("#dash-side .side-tab").forEach(btn => {
   });
 });
 
+// 侧边栏折叠 / 展开
+function setSideCollapsed(collapsed) {
+  const side = document.getElementById("dash-side");
+  side.classList.toggle("collapsed", collapsed);
+  const icon = document.querySelector(".side-collapse-icon");
+  if (icon) icon.textContent = collapsed ? "›" : "‹";
+  try { localStorage.setItem("side-collapsed", collapsed ? "1" : "0"); } catch (_) {}
+}
+document.getElementById("side-collapse").addEventListener("click", () => {
+  const side = document.getElementById("dash-side");
+  setSideCollapsed(!side.classList.contains("collapsed"));
+});
+// 启动时恢复折叠状态
+try {
+  if (localStorage.getItem("side-collapsed") === "1") setSideCollapsed(true);
+} catch (_) {}
+// Ctrl+B 切换
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+    e.preventDefault();
+    const side = document.getElementById("dash-side");
+    setSideCollapsed(!side.classList.contains("collapsed"));
+  }
+});
+
 document.getElementById("cycle-toggle").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;

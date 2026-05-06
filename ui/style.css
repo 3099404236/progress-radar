@@ -228,7 +228,28 @@ button { font-family: inherit; cursor: pointer; }
   border-right: 0.5px solid var(--color-border-tertiary);
   padding: 18px 10px;
   display: flex; flex-direction: column; gap: 4px;
+  transition: width .22s cubic-bezier(.2,.8,.3,1), padding .22s;
+  overflow: hidden;
 }
+.dash-side.collapsed { width: 36px; padding: 18px 4px; }
+.dash-side.collapsed .side-tab-label,
+.dash-side.collapsed .side-tab-count { display: none; }
+.dash-side.collapsed .side-tab { justify-content: center; padding: 10px 0; }
+.dash-side.collapsed .side-tab-dot { width: 10px; height: 10px; }
+.side-collapse {
+  align-self: flex-end;
+  width: 22px; height: 22px;
+  background: transparent; border: 0.5px solid var(--color-border-tertiary);
+  border-radius: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s;
+  margin-bottom: 8px; padding: 0;
+}
+.side-collapse:hover { color: var(--color-text-primary); border-color: var(--color-border-secondary); background: var(--color-background-tertiary); }
+.dash-side.collapsed .side-collapse { align-self: center; }
+.side-collapse-icon { display: inline-block; transform: translateY(-1px); font-weight: 600; }
 .side-tab {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 12px; border-radius: var(--border-radius-md);
