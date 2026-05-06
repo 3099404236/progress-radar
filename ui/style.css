@@ -312,6 +312,51 @@ button { font-family: inherit; cursor: pointer; }
 .dim-detail-title { font-size: 17px; font-weight: 600; color: var(--color-text-primary); }
 .dim-detail-sub { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px; }
 .detail-ach { margin-top: 22px; padding-top: 18px; border-top: 0.5px solid var(--color-border-tertiary); }
+
+/* 下一里程碑进度条 */
+.next-milestones { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.next-milestones.empty-next {
+  font-size: 12.5px; color: var(--color-text-tertiary);
+  padding: 12px 14px; background: var(--color-background-tertiary);
+  border-radius: var(--border-radius-md); border: 0.5px dashed var(--color-border-tertiary);
+}
+.nm-row {
+  position: relative;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  padding: 10px 12px 8px 14px;
+}
+.nm-row::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--color-text-tertiary);
+  border-radius: 2px 0 0 2px;
+}
+.nm-row.uncommon::before  { background: linear-gradient(180deg, #a3e0a8, #6ab170); }
+.nm-row.rare::before      { background: linear-gradient(180deg, #6cb1f5, #2c6aab); }
+.nm-row.epic::before      { background: linear-gradient(180deg, #e8b8f5, #b070d4); }
+.nm-row.legendary::before { background: linear-gradient(180deg, #ffd87a, #d4a040); width: 4px; }
+.nm-line1 { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+.nm-title { font-size: 13px; font-weight: 600; color: var(--color-text-primary); letter-spacing: 0.4px; }
+.nm-rar   { font-size: 10px; color: var(--color-text-tertiary); letter-spacing: 0.5px; font-weight: 600; }
+.nm-row.uncommon .nm-rar  { color: #8ad08f; }
+.nm-row.rare     .nm-rar  { color: #6cb1f5; }
+.nm-row.epic     .nm-rar  { color: #d8a0e8; }
+.nm-row.legendary .nm-rar { color: #ffd87a; }
+.nm-bar { width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+.nm-bar-fill {
+  height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, var(--color-accent) 0%, #6ec0ff 100%);
+  transition: width .3s;
+}
+.nm-row.uncommon  .nm-bar-fill { background: linear-gradient(90deg, #6ab170, #a3e0a8); }
+.nm-row.rare      .nm-bar-fill { background: linear-gradient(90deg, #2c6aab, #6cb1f5); }
+.nm-row.epic      .nm-bar-fill { background: linear-gradient(90deg, #b070d4, #e8b8f5); }
+.nm-row.legendary .nm-bar-fill { background: linear-gradient(90deg, #d4a040, #ffd87a); }
+.nm-line2 { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.nm-desc { font-size: 11px; color: var(--color-text-secondary); line-height: 1.4; flex: 1; }
+.nm-hint { font-size: 11px; color: var(--color-text-tertiary); white-space: nowrap; }
 .entries-wrap { max-height: 280px; overflow-y: auto; padding-right: 4px; }
 .detail-h { font-size: 12.5px; font-weight: 500; color: var(--color-text-secondary); margin: 18px 0 10px; text-transform: uppercase; letter-spacing: 0.4px; }
 .dstat-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }

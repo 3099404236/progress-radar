@@ -260,6 +260,68 @@ function metricRow(d) {
   </div>`;
 }
 
+// 计算单个 milestone 的进度（cur/target/label）
+function milestoneProgress(m, d) {
+  const stats = d.stats || {};
+  const phasesLen = (d.phases || []).length || 1;
+  const primary = d.primary_phase || 0;
+  const versions = (d.phase_versions || []).length;
+  const cycle = d.current_cycle || 1;
+  switch (m.id) {
+    case "dim_first":    return { cur: stats.total_entries, target: 1,  unit: "条记录" };
+    case "dim_10":       return { cur: stats.total_entries, target: 10, unit: "条记录" };
+    case "dim_deep":     return { cur: stats.total_entries, target: 20, unit: "条记录" };
+    case "dim_50":       return { cur: stats.total_entries, target: 50, unit: "条记录" };
+    case "dim_hatch":    return { cur: primary > 0 ? 1 : 0, target: 1, unit: "迈出起阶", binary: true, hint: primary > 0 ? "已迈出" : "尚在起阶" };
+    case "dim_mid":      return { cur: primary, target: Math.floor(phasesLen / 2), unit: "阶段索引", hint: `主阶段 ${primary + 1}/${phasesLen}` };
+    case "dim_finale":   return { cur: primary, target: phasesLen - 1, unit: "阶段索引", hint: `主阶段 ${primary + 1}/${phasesLen}` };
+    case "dim_cycle2":   return { cur: cycle, target: 2,  unit: "周期", binary: true, hint: `当前周期 #${cycle}` };
+    case "dim_streak3":  return { cur: stats.current_streak || 0, target: 3, unit: "天连续", hint: `连续 ${stats.current_streak || 0} 天` };
+    case "dim_streak7":  return { cur: stats.current_streak || 0, target: 7, unit: "天连续", hint: `连续 ${stats.current_streak || 0} 天` };
+    case "dim_active30": return { cur: stats.span_days || 0, target: 30, unit: "天跨度", hint: `首-末跨度 ${stats.span_days || 0} 天` };
+    case "dim_active90": return { cur: stats.span_days || 0, target: 90, unit: "天跨度", hint: `首-末跨度 ${stats.span_days || 0} 天` };
+    case "dim_reshape":  return { cur: versions >= 2 ? 1 : 0, target: 1, unit: "次演化", binary: true, hint: versions >= 2 ? "已演化" : "尚未演化（需 AI 重组阶段）" };
+  }
+  return { cur: 0, target: 1, unit: "" };
+}
+
+function nextMilestonesPanel(d) {
+  const ms = (d.achievements && d.achievements.milestones) || [];
+  const locked = ms.filter(m => !m.unlocked_at);
+  if (!locked.length) {
+    return `<div class="next-milestones empty-next">所有里程碑已解锁 — 已是该维度的"完全体"。</div>`;
+  }
+  // 算每个的进度比例，挑前 3 个最接近的
+  const ranked = locked.map(m => {
+    const p = milestoneProgress(m, d);
+    const ratio = p.target > 0 ? Math.min(p.cur / p.target, 0.999) : 0;
+    return { m, p, ratio };
+  }).sort((a, b) => b.ratio - a.ratio).slice(0, 3);
+
+  let h = `<h4 class="detail-h">下一里程碑</h4><div class="next-milestones">`;
+  for (const { m, p, ratio } of ranked) {
+    const pct = Math.round(ratio * 100);
+    const rar = rarityClass[m.rarity] || "common";
+    const rarText = rarityLabel[m.rarity] || "寻常";
+    const right = p.binary
+      ? `<span class="nm-hint">${escapeHTML(p.hint || "")}</span>`
+      : `<span class="nm-hint">${escapeHTML(p.hint || `${p.cur}/${p.target} ${p.unit}`)}</span>`;
+    h += `<div class="nm-row ${rar}">
+      <div class="nm-line1">
+        <span class="nm-title">${escapeHTML(m.title)}</span>
+        <span class="nm-rar">${rarText}</span>
+      </div>
+      <div class="nm-bar"><div class="nm-bar-fill" style="width:${pct}%"></div></div>
+      <div class="nm-line2">
+        <span class="nm-desc">${escapeHTML(m.description || "")}</span>
+        ${right}
+      </div>
+    </div>`;
+  }
+  h += `</div>`;
+  return h;
+}
+
 // ---------- 详情面板（嵌入到卡片下方） ----------
 
 function renderDetailPanel(d) {
@@ -276,6 +338,7 @@ function renderDetailPanel(d) {
     </div>`;
   h += metricRow(d);
   h += `<div class="dim-detail-sub">主阶段：${escapeHTML((d.phases || [])[d.primary_phase] || "—")} · 共 ${d.total_entries || 0} 条记录${versionInfo}</div>`;
+  h += nextMilestonesPanel(d);
   h += `<h4 class="detail-h">阶段热力分布</h4>${phaseDistribution(d)}`;
   h += `<h4 class="detail-h">每日活跃（近 90 天）</h4>${heat90(d)}`;
   h += `<h4 class="detail-h">最近记录</h4>`;
