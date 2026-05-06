@@ -128,13 +128,19 @@ def generate(image_id, visual_concept, rarity="common", force=False):
 
 
 def generate_async(image_id, visual_concept, rarity="common", on_done=None):
-    """后台线程生成；同一 image_id 并发只跑一次"""
+    """后台线程生成；同一 image_id 并发只跑一次
+
+    注：daemon 线程会随主进程退出而被杀（图请求会丢）。所以 GUI 启动时调一次
+    warm_card_images 来补救 — 这里若发现 image_id 在 _inflight 但磁盘没文件，
+    可能是上次进程被杀的残留，重新触发是安全的。
+    """
     if not visual_concept:
         return
     with _inflight_lock:
-        if image_id in _inflight:
-            return
         if has_image(image_id):
+            return
+        if image_id in _inflight:
+            # 已有同进程 in-flight 任务在跑，跳过
             return
         _inflight.add(image_id)
 
@@ -151,6 +157,12 @@ def generate_async(image_id, visual_concept, rarity="common", on_done=None):
                 _inflight.discard(image_id)
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+def reset_inflight():
+    """清空 inflight 集合（GUI 启动时调一次，清掉跨进程残留状态）"""
+    with _inflight_lock:
+        _inflight.clear()
 
 
 def read_as_data_url(image_id):

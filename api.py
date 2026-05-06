@@ -315,13 +315,24 @@ class API:
 
     def warm_card_images(self):
         """对已解锁但还没图的成就，批量补生成（异步触发）。
-        老的 insight/custom 缺 visual_concept 的，先用 DeepSeek 给它生一个，再触发生图。"""
+        老的 insight/custom 缺 visual_concept 的，先用 DeepSeek 给它生一个，再触发生图。
+        会先清空 inflight 残留状态，确保上次进程被杀掉的图能被重新触发。"""
         try:
             import theme_generator
+            image_generator.reset_inflight()  # 清掉跨进程残留
             data = data_store.load()
             ach = achievement_store.load(data)
             queued = 0
             enriched = 0
+            # 同步把磁盘已有但状态不对的修正
+            for s in ach.get("global", {}).get("milestones", []):
+                if s.get("image_id") and image_generator.has_image(s["image_id"]):
+                    s["image_status"] = "ready"
+            for did, blk in ach.get("per_dimension", {}).items():
+                for arr in (blk.get("milestones", []), blk.get("insights", []), blk.get("custom", [])):
+                    for s in arr:
+                        if s.get("image_id") and image_generator.has_image(s["image_id"]):
+                            s["image_status"] = "ready"
 
             def dim_label_of(scope_id):
                 d = data.get("dimensions", {}).get(scope_id)
