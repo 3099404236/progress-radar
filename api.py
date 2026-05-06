@@ -439,7 +439,8 @@ class API:
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     def replay_raw(self, raw_id):
-        """用当前 prompt 重新处理某条已归档的原文（即使之前是 skip / 重复也会重跑）"""
+        """用当前 prompt 重新处理某条已归档的原文（即使之前是 skip / 重复也会重跑）。
+        replay 走完后会同步等待新解锁成就的图都生成完，避免 daemon 线程被杀图丢失。"""
         try:
             items = raw_archive.read_all()
             item = next((x for x in items if x.get("id") == raw_id), None)
@@ -461,8 +462,18 @@ class API:
                     newly, _ = achievement_checker.check(data, result.get("dimension_id"))
                     if newly:
                         result["unlocked"] = newly
+                        # 同步等图生成完，避免脚本进程退出时 daemon 线程被杀
+                        ach = achievement_store.load(data)
+                        for u in newly:
+                            iid = u.get("image_id")
+                            if iid and not image_generator.has_image(iid):
+                                slot = self._find_slot_by_image_id(ach, iid)
+                                if slot and slot.get("visual_concept"):
+                                    image_generator.generate(iid, slot["visual_concept"], slot.get("rarity", "common"))
+                                    slot["image_status"] = "ready"
+                        achievement_store.save(ach)
                 except Exception:
-                    log.exception("成就检查失败")
+                    log.exception("成就检查/同步生图失败")
             try:
                 raw_archive.append(text, {**(result or {}), "_replay_of": raw_id})
             except Exception:
@@ -471,6 +482,16 @@ class API:
         except Exception as e:
             log.exception("replay_raw 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    @staticmethod
+    def _find_slot_by_image_id(ach, image_id):
+        for s in ach.get("global", {}).get("milestones", []):
+            if s.get("image_id") == image_id: return s
+        for blk in ach.get("per_dimension", {}).values():
+            for arr in (blk.get("milestones", []), blk.get("insights", []), blk.get("custom", [])):
+                for s in arr:
+                    if s.get("image_id") == image_id: return s
+        return None
 
     def export_raw_to_desktop(self):
         try:
