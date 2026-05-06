@@ -8,8 +8,6 @@ import base64
 import logging
 import os
 import threading
-import urllib.request
-import urllib.error
 
 import httpx
 
@@ -51,8 +49,11 @@ def has_image(image_id):
 
 
 def _download(url, dst):
-    with urllib.request.urlopen(url, timeout=60) as r:
-        data = r.read()
+    """下载图片：trust_env=False 避免被系统代理（clash/v2ray 没开时）拦"""
+    with httpx.Client(trust_env=False, timeout=120.0, follow_redirects=True) as client:
+        r = client.get(url)
+        r.raise_for_status()
+        data = r.content
     with open(dst, "wb") as f:
         f.write(data)
 
