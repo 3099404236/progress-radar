@@ -49,6 +49,12 @@ def _migrate_dimension(dim):
     if "rank" not in dim:
         dim["rank"] = 9999  # 大值兜底，前端按 (rank, created_at) 排，新创建的会落到底端
 
+    # 维度状态：active(默认/进行中) / honored(已完成 - 荣誉墙) / ignored(已忽视 - 垃圾箱)
+    if "state" not in dim:
+        dim["state"] = "active"
+    if "state_changed_at" not in dim:
+        dim["state_changed_at"] = None
+
     if "phase_versions" not in dim:
         dim["phase_versions"] = [{
             "version": 1,

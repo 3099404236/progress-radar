@@ -20,12 +20,32 @@
       <button class="bar-link" id="paste-btn">+ 粘贴</button>
     </div>
   </div>
-  <div class="dash-body">
-    <div class="dash-body-inner">
-      <div id="app"><div class="empty">加载中…</div></div>
+  <div class="dash-main">
+    <aside class="dash-side" id="dash-side">
+      <button class="side-tab on" data-view="active">
+        <span class="side-tab-dot active-dot"></span>
+        <span class="side-tab-label">进行中</span>
+        <span class="side-tab-count" id="cnt-active">0</span>
+      </button>
+      <button class="side-tab" data-view="honored">
+        <span class="side-tab-dot honored-dot"></span>
+        <span class="side-tab-label">荣誉墙</span>
+        <span class="side-tab-count" id="cnt-honored">0</span>
+      </button>
+      <button class="side-tab" data-view="ignored">
+        <span class="side-tab-dot ignored-dot"></span>
+        <span class="side-tab-label">已忽视</span>
+        <span class="side-tab-count" id="cnt-ignored">0</span>
+      </button>
+    </aside>
+    <div class="dash-body">
+      <div class="dash-body-inner">
+        <div id="app"><div class="empty">加载中…</div></div>
+      </div>
     </div>
   </div>
 </div>
+<div id="ctx-menu" class="ctx-menu"></div>
 <script src="dashboard.js"></script>
 </body>
 </html>

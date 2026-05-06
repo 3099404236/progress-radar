@@ -206,6 +206,8 @@ class API:
                 "achievements": ach_summary,
                 "track": dim.get("track", "main"),
                 "rank": dim.get("rank", 9999),
+                "state": dim.get("state", "active"),
+                "state_changed_at": dim.get("state_changed_at"),
             })
         meta = data.get("meta", {})
         return json.dumps({
@@ -510,6 +512,25 @@ class API:
             return json.dumps({"status": "ok", "count": count, "path": path}, ensure_ascii=False)
         except Exception as e:
             log.exception("export_raw 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    # ---------- 维度状态：进行中 / 荣誉 / 忽视 ----------
+
+    def set_dim_state(self, dimension_id, state):
+        """state ∈ {'active', 'honored', 'ignored'}"""
+        try:
+            if state not in ("active", "honored", "ignored"):
+                return json.dumps({"status": "error", "message": "无效 state"}, ensure_ascii=False)
+            data = data_store.load()
+            d = data["dimensions"].get(dimension_id)
+            if not d:
+                return json.dumps({"status": "error", "message": "维度不存在"}, ensure_ascii=False)
+            d["state"] = state
+            d["state_changed_at"] = datetime.now().isoformat(timespec="seconds")
+            data_store.save(data)
+            return json.dumps({"status": "ok", "state": state}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("set_dim_state 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     # ---------- 主线/支线/必做 三栏布局 ----------

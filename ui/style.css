@@ -221,7 +221,41 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--color-background-secondary); color: var(--color-text-primary);
   font-weight: 500; box-shadow: var(--shadow-sm);
 }
-.dash-body { flex: 1; overflow: auto; padding: 24px 32px 60px; }
+.dash-main { flex: 1; display: flex; min-height: 0; }
+.dash-side {
+  width: 156px; flex-shrink: 0;
+  background: var(--color-background-secondary);
+  border-right: 0.5px solid var(--color-border-tertiary);
+  padding: 18px 10px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.side-tab {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--border-radius-md);
+  background: transparent; border: 0;
+  font-size: 13px; color: var(--color-text-secondary);
+  text-align: left; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.side-tab:hover { background: var(--color-background-tertiary); color: var(--color-text-primary); }
+.side-tab.on {
+  background: var(--color-background-tertiary);
+  color: var(--color-text-primary); font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+.side-tab-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.side-tab-dot.active-dot   { background: #4a9bee; box-shadow: 0 0 6px rgba(74,155,238,0.5); }
+.side-tab-dot.honored-dot  { background: #ffd87a; box-shadow: 0 0 6px rgba(255,216,122,0.5); }
+.side-tab-dot.ignored-dot  { background: #6a7180; }
+.side-tab-label { flex: 1; }
+.side-tab-count {
+  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  background: var(--color-background-primary); color: var(--color-text-tertiary);
+  font-weight: 500; letter-spacing: 0.4px;
+}
+.side-tab.on .side-tab-count { color: var(--color-text-primary); }
+
+.dash-body { flex: 1; overflow: auto; padding: 24px 32px 60px; min-width: 0; }
 .dash-body-inner { max-width: 1280px; margin: 0 auto; }
 
 .metric-row { display: flex; gap: 12px; margin-bottom: 16px; }
@@ -297,6 +331,50 @@ button { font-family: inherit; cursor: pointer; }
 .dim-card.tier-2 {
   border-color: rgba(255,255,255,0.12);
 }
+
+/* 荣誉 / 忽视 视图 */
+.state-view { padding: 0; margin-bottom: 24px; }
+.state-head { margin-bottom: 16px; }
+.state-title { font-size: 17px; font-weight: 700; letter-spacing: 1px; margin-bottom: 4px; }
+.state-view.honored .state-title {
+  background: linear-gradient(135deg, #ffd87a 0%, #fff2c0 50%, #ffd87a 100%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.state-view.ignored .state-title { color: var(--color-text-secondary); }
+.state-sub { font-size: 12px; color: var(--color-text-tertiary); }
+.state-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+
+/* 荣誉视图：所有卡片都金色边 */
+.state-view.honored .dim-card {
+  border-color: rgba(255,216,122,0.4);
+  background: linear-gradient(135deg, var(--color-background-secondary) 0%, #1f1808 100%);
+}
+.state-view.honored .dim-card .dim-label {
+  background: linear-gradient(135deg, #ffd87a 0%, #fff2c0 50%, #ffd87a 100%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+/* 忽视视图：灰阶降饱和 */
+.state-view.ignored .dim-card {
+  filter: grayscale(0.6) brightness(0.85);
+  opacity: 0.85;
+}
+
+/* 右键菜单 */
+.ctx-menu {
+  position: fixed; z-index: 10000;
+  display: none; min-width: 180px;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-secondary);
+  border-radius: var(--border-radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+  padding: 4px;
+}
+.ctx-item {
+  padding: 8px 12px; border-radius: 4px;
+  font-size: 13px; color: var(--color-text-primary);
+  cursor: pointer; user-select: none;
+}
+.ctx-item:hover { background: rgba(74,155,238,0.18); }
 .dim-card {
   background: var(--color-background-secondary);
   border: 0.5px solid var(--color-border-tertiary);

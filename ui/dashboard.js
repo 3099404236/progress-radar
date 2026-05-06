@@ -9,6 +9,7 @@ let cycleFilter = "current";
 let weeklyVisible = false;
 let weeklyText = null;
 let globalAchievements = null;
+let currentView = "active"; // 'active' | 'honored' | 'ignored'
 
 function escapeHTML(s) {
   return (s || "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -394,60 +395,97 @@ function dimCardHTML(dm, posIndex) {
 
 function render() {
   const app = document.getElementById("app");
+
+  // 更新侧边计数
+  const cntA = dims.filter(d => (d.state || "active") === "active").length;
+  const cntH = dims.filter(d => d.state === "honored").length;
+  const cntI = dims.filter(d => d.state === "ignored").length;
+  const fmt = (n) => n;
+  const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = fmt(v); };
+  setText("cnt-active", cntA); setText("cnt-honored", cntH); setText("cnt-ignored", cntI);
+
+  // 全局指标行（基于全部维度统计）
   const totalEntries = dims.reduce((s, x) => s + (x.total_entries || 0), 0);
-  const activeDims = dims.filter(x => (x.total_entries || 0) > 0).length;
+  const activeDimsHasEntry = dims.filter(x => (x.total_entries || 0) > 0).length;
   const thisWeek = dims.reduce((s, x) => s + (x.heat || []).slice(-7).reduce((a, b) => a + b, 0), 0);
 
   let h = `<div class="metric-row">
     <div class="metric"><div class="metric-label">Total entries</div><div class="metric-val">${totalEntries}</div></div>
-    <div class="metric"><div class="metric-label">Active dimensions</div><div class="metric-val">${activeDims}</div></div>
+    <div class="metric"><div class="metric-label">Active dimensions</div><div class="metric-val">${activeDimsHasEntry}</div></div>
     <div class="metric"><div class="metric-label">This week activity</div><div class="metric-val">${thisWeek}</div></div>
   </div>`;
 
+  // 按当前视图过滤
+  const visible = dims.filter(d => (d.state || "active") === currentView);
+
   if (!dims.length) {
     h += `<div class="empty">还没有任何维度。点击右上角 <b>+ 粘贴</b> 添加第一条。</div>`;
-  } else {
-    // 三栏分组
-    const buckets = { must: [], main: [], side: [] };
-    for (const dm of dims) {
-      const t = (buckets[dm.track] !== undefined) ? dm.track : "main";
-      buckets[t].push(dm);
-    }
-    // 同栏按 (rank ASC, created_at DESC) 排
-    for (const k of Object.keys(buckets)) {
-      buckets[k].sort((a, b) => {
-        const ar = a.rank == null ? 9999 : a.rank;
-        const br = b.rank == null ? 9999 : b.rank;
-        if (ar !== br) return ar - br;
-        return (b.created_at || "").localeCompare(a.created_at || "");
-      });
-    }
+  } else if (currentView === "active") {
+    if (!visible.length) {
+      h += `<div class="empty">所有维度都已归档或忽视，左侧切到「荣誉墙」或「已忽视」查看。</div>`;
+    } else {
+      const buckets = { must: [], main: [], side: [] };
+      for (const dm of visible) {
+        const t = (buckets[dm.track] !== undefined) ? dm.track : "main";
+        buckets[t].push(dm);
+      }
+      for (const k of Object.keys(buckets)) {
+        buckets[k].sort((a, b) => {
+          const ar = a.rank == null ? 9999 : a.rank;
+          const br = b.rank == null ? 9999 : b.rank;
+          if (ar !== br) return ar - br;
+          return (b.created_at || "").localeCompare(a.created_at || "");
+        });
+      }
 
-    h += `<div class="track-grid">`;
-    for (const td of TRACK_DEF) {
-      const list = buckets[td.key];
-      h += `<div class="track-col" data-track="${td.key}">
-        <div class="track-head">
-          <div class="track-title">${td.title}</div>
-          <div class="track-sub">${td.subtitle}</div>
-          <div class="track-count">${list.length}</div>
-        </div>
-        <div class="track-drop" data-track="${td.key}">`;
-      if (!list.length) {
-        h += `<div class="track-empty">把卡片拖过来</div>`;
+      h += `<div class="track-grid">`;
+      for (const td of TRACK_DEF) {
+        const list = buckets[td.key];
+        h += `<div class="track-col" data-track="${td.key}">
+          <div class="track-head">
+            <div class="track-title">${td.title}</div>
+            <div class="track-sub">${td.subtitle}</div>
+            <div class="track-count">${list.length}</div>
+          </div>
+          <div class="track-drop" data-track="${td.key}">`;
+        if (!list.length) {
+          h += `<div class="track-empty">把卡片拖过来</div>`;
+        }
+        for (let i = 0; i < list.length; i++) {
+          h += dimCardHTML(list[i], i);
+        }
+        h += `</div></div>`;
       }
-      for (let i = 0; i < list.length; i++) {
-        h += dimCardHTML(list[i], i);
-      }
-      h += `</div></div>`;
+      h += `</div>`;
+    }
+  } else {
+    // honored / ignored 视图：扁平网格，按 state_changed_at 倒序
+    const sorted = visible.slice().sort((a, b) =>
+      (b.state_changed_at || "").localeCompare(a.state_changed_at || "")
+    );
+    const headTitle = currentView === "honored" ? "荣誉墙" : "已忽视";
+    const headSub = currentView === "honored"
+      ? "已完成的旅程 — 你曾走过的山。右键可恢复或转入忽视。"
+      : "暂时不追踪的方向。右键可恢复或转入荣誉。";
+    h += `<div class="state-view ${currentView}">
+      <div class="state-head">
+        <div class="state-title">${headTitle}</div>
+        <div class="state-sub">${headSub} · 共 ${sorted.length} 项</div>
+      </div>`;
+    if (!sorted.length) {
+      h += `<div class="empty">还没有 ${headTitle} 中的维度。在「进行中」对一张卡右键即可归档到这里。</div>`;
+    } else {
+      h += `<div class="state-grid">`;
+      for (const dm of sorted) h += dimCardHTML(dm, 99);
+      h += `</div>`;
     }
     h += `</div>`;
+  }
 
-    // 详情面板放在三栏下方
-    if (selected) {
-      const d = dims.find(x => x.id === selected);
-      if (d) h += renderDetailPanel(d);
-    }
+  // 详情面板（任意视图都可展开看详情）
+  if (selected) {
+    const d = dims.find(x => x.id === selected);
+    if (d && (d.state || "active") === currentView) h += renderDetailPanel(d);
   }
 
   if (globalAchievements && (globalAchievements.milestone_total || 0) > 0) {
@@ -474,6 +512,7 @@ function render() {
   });
 
   wireDragAndDrop();
+  wireContextMenu();
 
   const collapseBtn = app.querySelector("[data-collapse]");
   if (collapseBtn) collapseBtn.addEventListener("click", (e) => {
@@ -662,6 +701,65 @@ function wireDragAndDrop() {
   });
 }
 
+// ---------- 右键菜单：完成 / 忽视 / 恢复 ----------
+
+function wireContextMenu() {
+  document.querySelectorAll(".dim-card").forEach(card => {
+    card.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const dim = dims.find(x => x.id === card.dataset.id);
+      if (!dim) return;
+      showContextMenu(e.clientX, e.clientY, dim);
+    });
+  });
+}
+
+function showContextMenu(x, y, dim) {
+  const menu = document.getElementById("ctx-menu");
+  const cur = dim.state || "active";
+  const items = [];
+  if (cur !== "honored") items.push({ label: "标记完成（→ 荣誉墙）", to: "honored" });
+  if (cur !== "ignored") items.push({ label: "忽视（→ 垃圾箱）", to: "ignored" });
+  if (cur !== "active")  items.push({ label: "恢复到进行中", to: "active" });
+
+  menu.innerHTML = items.map(it =>
+    `<div class="ctx-item" data-to="${it.to}">${it.label}</div>`
+  ).join("");
+
+  // 定位（避免出屏）
+  const vw = window.innerWidth, vh = window.innerHeight;
+  menu.style.display = "block";
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, vw - r.width - 8) + "px";
+  menu.style.top  = Math.min(y, vh - r.height - 8) + "px";
+
+  const close = () => { menu.style.display = "none"; menu.innerHTML = ""; };
+  menu.querySelectorAll(".ctx-item").forEach(it => {
+    it.addEventListener("click", async () => {
+      const to = it.dataset.to;
+      close();
+      try {
+        const r = JSON.parse(await window.pywebview.api.set_dim_state(dim.id, to));
+        if (r.status === "ok") {
+          dim.state = to;
+          dim.state_changed_at = new Date().toISOString();
+          load();  // 拉一次最新数据，含计数
+        } else {
+          alert("失败：" + (r.message || ""));
+        }
+      } catch (err) { alert("错误：" + err); }
+    });
+  });
+
+  // 点其他地方 / Esc 关闭
+  setTimeout(() => {
+    document.addEventListener("click", close, { once: true });
+    document.addEventListener("keydown", function esc(e) {
+      if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); }
+    });
+  }, 0);
+}
+
 async function persistTrackLayout() {
   if (!window.pywebview || !window.pywebview.api) return;
   const layout = { must: [], main: [], side: [] };
@@ -721,6 +819,17 @@ async function load() {
     document.getElementById("app").innerHTML = `<div class="empty">加载失败：${escapeHTML(String(e))}</div>`;
   }
 }
+
+// 侧边栏视图切换
+document.querySelectorAll("#dash-side .side-tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    currentView = btn.dataset.view;
+    document.querySelectorAll("#dash-side .side-tab").forEach(b => b.classList.toggle("on", b === btn));
+    selected = null;
+    render();
+    document.querySelector(".dash-body").scrollTop = 0;
+  });
+});
 
 document.getElementById("cycle-toggle").addEventListener("click", (e) => {
   const b = e.target.closest("button");
