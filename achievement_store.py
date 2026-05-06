@@ -76,6 +76,20 @@ def _ensure_global(data):
     g["milestones"] = _refresh_from_template(g["milestones"], GLOBAL_MILESTONE_TEMPLATES, scope="global", scope_id="_")
 
 
+def _migrate_legacy_items(items, scope, scope_id):
+    """老 insight/custom 缺 image_id / image_status / visual_concept 时补齐"""
+    import hashlib
+    for it in items:
+        if not it.get("image_id"):
+            title = it.get("title", "")
+            it["image_id"] = f"{scope}__{scope_id}__{hashlib.md5(title.encode('utf-8')).hexdigest()[:8]}"
+        if not it.get("image_status"):
+            it["image_status"] = "missing"
+        if "visual_concept" not in it:
+            it["visual_concept"] = ""
+    return items
+
+
 def ensure_dimension_block(data, dim_id, themed_overrides=None):
     """为新维度创建 13 个空 milestone 槽；存在则按模板刷新；可传 themed_overrides 覆盖文案"""
     pd = data.setdefault("per_dimension", {})
@@ -87,6 +101,8 @@ def ensure_dimension_block(data, dim_id, themed_overrides=None):
         block["milestones"], DIM_MILESTONE_TEMPLATES, themed_overrides,
         scope="dim", scope_id=dim_id,
     )
+    _migrate_legacy_items(block["insights"], "insight", dim_id)
+    _migrate_legacy_items(block["custom"], "custom", dim_id)
     return block
 
 

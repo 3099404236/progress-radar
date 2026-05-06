@@ -125,6 +125,47 @@ def _extract_json(text):
     raise json.JSONDecodeError("无法解析", text, 0)
 
 
+VC_SYSTEM = """你是个视觉概念设计师。给定一个成就的中文标题、描述和它所属维度的标签，
+为它写一段英文 visual_concept 用于驱动文生图模型。
+
+要求：
+- 必须英文，30 词以内
+- 描述具体的物体 + 场景 + 光影氛围，不要抽象概念
+- 不要文字 / 字母 / 数字 / 标志 / logo
+- 紧贴该成就的语义和维度主题（早起 → 晨光相关，体测 → 运动器材相关，研究 → 学术意象）
+
+输出 JSON：{"visual_concept": "..."}"""
+
+
+def generate_vc_for_one(title, description, dim_label="", rarity="uncommon"):
+    """给单个成就（insight / custom / 老 milestone）生成 visual_concept"""
+    client = ai_processor.get_client()
+    user = (
+        f"成就标题：{title}\n"
+        f"成就描述：{description}\n"
+        f"所属维度：{dim_label or '（无）'}\n"
+        f"稀有度：{rarity}\n"
+        f"为它写英文 visual_concept。"
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=config.DEEPSEEK_MODEL,
+            messages=[
+                {"role": "system", "content": VC_SYSTEM},
+                {"role": "user", "content": user},
+            ],
+            response_format={"type": "json_object"},
+            max_tokens=300,
+        )
+        raw = resp.choices[0].message.content or ""
+        data = _extract_json(raw)
+        vc = (data.get("visual_concept") or "").strip()
+        return vc
+    except Exception:
+        log.exception("generate_vc_for_one 失败 title=%s", title)
+        return ""
+
+
 def generate_for_dimension(dim_label, phases, descs=None):
     """返回 {id: {title, description}} 字典；失败时返回 {}（调用方回退到默认）"""
     client = ai_processor.get_client()

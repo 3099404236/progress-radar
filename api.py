@@ -314,29 +314,55 @@ class API:
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     def warm_card_images(self):
-        """对已解锁但还没图的成就，批量补生成（异步触发）"""
+        """对已解锁但还没图的成就，批量补生成（异步触发）。
+        老的 insight/custom 缺 visual_concept 的，先用 DeepSeek 给它生一个，再触发生图。"""
         try:
+            import theme_generator
             data = data_store.load()
             ach = achievement_store.load(data)
             queued = 0
-            def kick(slot):
-                nonlocal queued
-                if slot.get("unlocked_at") and slot.get("visual_concept") and slot.get("image_id"):
-                    if not image_generator.has_image(slot["image_id"]):
-                        slot["image_status"] = "inflight"
-                        image_generator.generate_async(slot["image_id"], slot["visual_concept"], slot.get("rarity", "common"))
-                        queued += 1
+            enriched = 0
+
+            def dim_label_of(scope_id):
+                d = data.get("dimensions", {}).get(scope_id)
+                return d["label"] if d else ""
+
+            def kick(slot, dim_label=""):
+                nonlocal queued, enriched
+                if not slot.get("unlocked_at"):
+                    return
+                if not slot.get("image_id"):
+                    return
+                if image_generator.has_image(slot["image_id"]):
+                    slot["image_status"] = "ready"
+                    return
+                # 缺 vc 的：调 DeepSeek 单独生成
+                if not slot.get("visual_concept"):
+                    vc = theme_generator.generate_vc_for_one(
+                        slot.get("title", ""), slot.get("description") or slot.get("condition_text", ""),
+                        dim_label, slot.get("rarity", "uncommon"),
+                    )
+                    if vc:
+                        slot["visual_concept"] = vc
+                        enriched += 1
+                    else:
+                        return
+                slot["image_status"] = "inflight"
+                image_generator.generate_async(slot["image_id"], slot["visual_concept"], slot.get("rarity", "common"))
+                queued += 1
+
             for slot in ach.get("global", {}).get("milestones", []):
-                kick(slot)
+                kick(slot, "")
             for did, block in ach.get("per_dimension", {}).items():
+                lbl = dim_label_of(did)
                 for slot in block.get("milestones", []):
-                    kick(slot)
+                    kick(slot, lbl)
                 for slot in block.get("insights", []):
-                    kick(slot)
+                    kick(slot, lbl)
                 for slot in block.get("custom", []):
-                    kick(slot)
+                    kick(slot, lbl)
             achievement_store.save(ach)
-            return json.dumps({"status": "ok", "queued": queued}, ensure_ascii=False)
+            return json.dumps({"status": "ok", "queued": queued, "enriched": enriched}, ensure_ascii=False)
         except Exception as e:
             log.exception("warm_card_images 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
