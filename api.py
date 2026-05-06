@@ -208,6 +208,7 @@ class API:
                 "rank": dim.get("rank", 9999),
                 "state": dim.get("state", "active"),
                 "state_changed_at": dim.get("state_changed_at"),
+                "timeline": sorted(dim.get("timeline", []), key=lambda x: x.get("date", "")),
             })
         meta = data.get("meta", {})
         return json.dumps({
@@ -512,6 +513,45 @@ class API:
             return json.dumps({"status": "ok", "count": count, "path": path}, ensure_ascii=False)
         except Exception as e:
             log.exception("export_raw 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    # ---------- 时间轴 ----------
+
+    def add_timeline_event(self, dimension_id, date, label, note=""):
+        """date: YYYY-MM-DD"""
+        try:
+            import hashlib, re as _re
+            if not _re.match(r"^\d{4}-\d{2}-\d{2}$", str(date)):
+                return json.dumps({"status": "error", "message": "日期格式应为 YYYY-MM-DD"}, ensure_ascii=False)
+            data = data_store.load()
+            d = data["dimensions"].get(dimension_id)
+            if not d:
+                return json.dumps({"status": "error", "message": "维度不存在"}, ensure_ascii=False)
+            timeline = d.setdefault("timeline", [])
+            eid = hashlib.md5((date + "|" + label).encode("utf-8")).hexdigest()[:10]
+            if any(e.get("id") == eid for e in timeline):
+                return json.dumps({"status": "ok", "duplicated": True}, ensure_ascii=False)
+            timeline.append({
+                "id": eid, "date": date, "label": label[:24], "note": (note or "")[:80],
+                "added_at": datetime.now().isoformat(timespec="seconds"),
+            })
+            timeline.sort(key=lambda x: x.get("date", ""))
+            data_store.save(data)
+            return json.dumps({"status": "ok", "id": eid}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("add_timeline_event 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    def remove_timeline_event(self, dimension_id, event_id):
+        try:
+            data = data_store.load()
+            d = data["dimensions"].get(dimension_id)
+            if not d: return json.dumps({"status": "error", "message": "维度不存在"}, ensure_ascii=False)
+            d["timeline"] = [e for e in d.get("timeline", []) if e.get("id") != event_id]
+            data_store.save(data)
+            return json.dumps({"status": "ok"}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("remove_timeline_event 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     # ---------- 维度状态：进行中 / 荣誉 / 忽视 ----------

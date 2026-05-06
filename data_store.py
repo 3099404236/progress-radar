@@ -55,6 +55,10 @@ def _migrate_dimension(dim):
     if "state_changed_at" not in dim:
         dim["state_changed_at"] = None
 
+    # 时间轴：用户提及具体日期事件（考试日期、看医生、截止等）由 AI 提取
+    if "timeline" not in dim:
+        dim["timeline"] = []
+
     if "phase_versions" not in dim:
         dim["phase_versions"] = [{
             "version": 1,

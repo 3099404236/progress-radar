@@ -377,8 +377,9 @@ function dimCardHTML(dm, posIndex) {
   const ach = dm.achievements || {};
   const achPill = `<span class="dim-ach-pill">${ach.milestone_unlocked || 0}/${ach.milestone_total || 13}</span>`;
   const isActive = dm.id === selected ? " active" : "";
-  // posIndex 越小，越华丽。0=金色光环，1=蓝色光晕，2 起为常规
   const tier = posIndex === 0 ? " tier-0" : posIndex === 1 ? " tier-1" : posIndex === 2 ? " tier-2" : "";
+  const tlCount = (dm.timeline || []).length;
+  const tlBtn = `<button class="dim-tl-btn${tlCount ? ' has' : ''}" data-tl-id="${escapeHTML(dm.id)}" title="${tlCount ? '查看时间轴 ('+tlCount+')' : '时间轴（提交带日期的内容会自动填充）'}">${tlCount || ''}</button>`;
   return `<div class="dim-card${isActive}${tier}" draggable="true" data-id="${escapeHTML(dm.id)}">
     ${autoBadge}${cycleBadge}
     <div class="dim-label">${escapeHTML(dm.label)}</div>
@@ -390,6 +391,7 @@ function dimCardHTML(dm, posIndex) {
         ${achPill} 里程碑
       </div>
     </div>
+    ${tlBtn}
   </div>`;
 }
 
@@ -513,6 +515,7 @@ function render() {
 
   wireDragAndDrop();
   wireContextMenu();
+  wireTimelineButtons();
 
   const collapseBtn = app.querySelector("[data-collapse]");
   if (collapseBtn) collapseBtn.addEventListener("click", (e) => {
@@ -699,6 +702,130 @@ function wireDragAndDrop() {
       persistTrackLayout();
     });
   });
+}
+
+// ---------- 时间轴漫画气泡 ----------
+
+let _tlBubble = null;
+
+function wireTimelineButtons() {
+  document.querySelectorAll(".dim-tl-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const dim = dims.find(x => x.id === btn.dataset.tlId);
+      if (!dim) return;
+      openTimelineBubble(btn, dim);
+    });
+  });
+}
+
+function closeTimelineBubble() {
+  if (_tlBubble) { _tlBubble.remove(); _tlBubble = null; }
+}
+
+function openTimelineBubble(anchor, dim) {
+  closeTimelineBubble();
+  const tl = (dim.timeline || []).slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const today = new Date().toISOString().slice(0, 10);
+
+  let body = "";
+  if (!tl.length) {
+    body = `<div class="tl-empty">还没有时间事件。<br>在粘贴页提交"6 月 15 日操作系统期末"这种带日期的内容，AI 会自动填进来。</div>`;
+  } else {
+    body = `<ol class="tl-list">`;
+    for (const ev of tl) {
+      let cls = "future";
+      if (ev.date < today) cls = "past";
+      else if (ev.date === today) cls = "today";
+      const dt = new Date(ev.date + "T00:00:00");
+      const md = `${dt.getMonth()+1}/${dt.getDate()}`;
+      const wk = "日一二三四五六"[dt.getDay()];
+      let countdown = "";
+      if (ev.date >= today) {
+        const days = Math.round((dt - new Date(today + "T00:00:00")) / 86400000);
+        countdown = days === 0 ? "今天" : `${days} 天后`;
+      } else {
+        const days = Math.round((new Date(today + "T00:00:00") - dt) / 86400000);
+        countdown = `${days} 天前`;
+      }
+      body += `<li class="tl-item ${cls}">
+        <div class="tl-dot"></div>
+        <div class="tl-meat">
+          <div class="tl-line1">
+            <span class="tl-date">${md}</span>
+            <span class="tl-week">周${wk}</span>
+            <span class="tl-cd">${countdown}</span>
+          </div>
+          <div class="tl-label">${escapeHTML(ev.label)}</div>
+          ${ev.note ? `<div class="tl-note">${escapeHTML(ev.note)}</div>` : ""}
+          <button class="tl-del" data-del="${escapeHTML(ev.id)}" title="删除">×</button>
+        </div>
+      </li>`;
+    }
+    body += `</ol>`;
+  }
+
+  const bubble = document.createElement("div");
+  bubble.className = "tl-bubble";
+  bubble.innerHTML = `
+    <div class="tl-bubble-head">
+      <div class="tl-bubble-title">时间轴 · ${escapeHTML(dim.label)}</div>
+      <button class="tl-close" data-close>×</button>
+    </div>
+    ${body}
+    <div class="tl-arrow"></div>
+  `;
+  document.body.appendChild(bubble);
+  _tlBubble = bubble;
+
+  // 定位：默认从 anchor 右下方往外引出。气泡放在 anchor 下方一点
+  const ar = anchor.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const br = bubble.getBoundingClientRect();
+  let left = ar.right + 10;
+  let top  = ar.top - 8;
+  let arrowSide = "left";
+  // 右边塞不下：从左侧出
+  if (left + br.width + 12 > vw) { left = ar.left - br.width - 10; arrowSide = "right"; }
+  // 底部塞不下：往上抬
+  if (top + br.height + 12 > vh) top = vh - br.height - 12;
+  if (top < 12) top = 12;
+  if (left < 12) left = 12;
+  bubble.style.left = left + "px";
+  bubble.style.top  = top + "px";
+  bubble.classList.add("arrow-" + arrowSide);
+  // 把箭头垂直对到 anchor 中心
+  const anchorMid = ar.top + ar.height / 2;
+  const arrowEl = bubble.querySelector(".tl-arrow");
+  if (arrowEl) arrowEl.style.top = (anchorMid - top - 8) + "px";
+
+  // 删除事件
+  bubble.querySelectorAll("[data-del]").forEach(b => {
+    b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = b.dataset.del;
+      try {
+        await window.pywebview.api.remove_timeline_event(dim.id, id);
+        dim.timeline = (dim.timeline || []).filter(x => x.id !== id);
+        closeTimelineBubble();
+        render();
+      } catch (err) { alert("错误：" + err); }
+    });
+  });
+  bubble.querySelector("[data-close]").addEventListener("click", closeTimelineBubble);
+  setTimeout(() => {
+    document.addEventListener("click", function once(e) {
+      if (_tlBubble && !_tlBubble.contains(e.target)) {
+        closeTimelineBubble();
+        document.removeEventListener("click", once);
+      } else {
+        document.addEventListener("click", once, { once: true });
+      }
+    }, { once: true });
+    document.addEventListener("keydown", function esc(e) {
+      if (e.key === "Escape") { closeTimelineBubble(); document.removeEventListener("keydown", esc); }
+    });
+  }, 0);
 }
 
 // ---------- 右键菜单：完成 / 忽视 / 恢复 ----------

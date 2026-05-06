@@ -118,6 +118,18 @@ cycle_event = {{"type":"new_cycle","reason":"...","new_cycle_number":N,"reset_pr
 ### 第七步：下一步建议
 - 1-3个具体可执行的下一步
 
+### 第七B步：时间轴事件提取 ⭐（仅当内容含具体日期或可推算的相对日期）
+- 仅当用户提到"X月X日 / MM-DD / 某月某号 / 周X / N天后"这种**带具体日期**的事件预告/截止时提取
+- 输出 `timeline_events` 数组（没有就给 `[]`）
+- 字段：`{"date":"YYYY-MM-DD","label":"≤12字事件名","note":"可选附加信息"}`
+- 相对日期需基于今天换算成 ISO 格式（今天日期会作为系统时间隐含传入；如果没把握就跳过）
+- 示例：
+  - "操作系统期末 6 月 15 日 B404 教室" → `[{"date":"2026-06-15","label":"操作系统期末","note":"B404 教室"}]`
+  - "牙医约的周五（5月8号）下午 3 点" → `[{"date":"2026-05-08","label":"看牙医","note":"下午 3 点"}]`
+  - "下学期开学要好好准备" → `[]`（无具体日期）
+  - "今天早起了" → `[]`（是行为不是预告）
+- 可一次提取多条事件（如"6月8 高数、6月10 计组"）
+
 ### 第八步：维度专属洞察成就（高度可选，绝大多数 update 应为 null）⭐
 - 每个维度有自己的"洞察"成就池。如果本次提交在所属维度内代表一个真正的转折点（不是普通进展），才颁发
 - 类型参考：方法突破 / 质量跃迁 / 关键发现 / 瓶颈突破 / 意外连接 / 边界拓展
@@ -134,11 +146,11 @@ cycle_event = {{"type":"new_cycle","reason":"...","new_cycle_number":N,"reset_pr
 严格 JSON，以下场景之一：
 
 A. 匹配已有维度 → update：
-{{"action":"update","dimension_id":"...","summary":"...","key_progress":["..."],"tag":"...","phase_index":N,"progress_delta":"...","next_steps":["..."],"cross_dimensions":[],"cycle_event":null,"achievement":null}}
+{{"action":"update","dimension_id":"...","summary":"...","key_progress":["..."],"tag":"...","phase_index":N,"progress_delta":"...","next_steps":["..."],"cross_dimensions":[],"cycle_event":null,"achievement":null,"timeline_events":[]}}
 （如颁发: "achievement":{{"title":"四字","description":"一句话","rarity":"...","visual_concept":"english scene 30 words"}}）
 
 B. 创建新维度 → create：
-{{"action":"create","dimension_id":"snake_case","dimension_label":"中文标签","reason":"为什么不属于已有维度","phases":[{{"name":"...","desc":"..."}}],"initial_phase_index":0,"summary":"...","key_progress":["..."],"tag":"...","next_steps":["..."],"achievement":null}}
+{{"action":"create","dimension_id":"snake_case","dimension_label":"中文标签","reason":"为什么不属于已有维度","phases":[{{"name":"...","desc":"..."}}],"initial_phase_index":0,"summary":"...","key_progress":["..."],"tag":"...","next_steps":["..."],"achievement":null,"timeline_events":[]}}
 
 C. 阶段演化 → evolve：
 {{"action":"evolve","dimension_id":"...","reason":"...","current_phases":["..."],"proposed_phases":[{{"name":"...","desc":"..."}}],"entry_remapping":[{{"old_phase":N,"new_phase":M}}],"summary":"...","key_progress":["..."],"tag":"...","phase_index_after_evolve":N}}
@@ -204,11 +216,12 @@ def call_deepseek(user_text, data):
     system = SYSTEM_PROMPT.replace(
         "{dimensions_summary}", _build_dimensions_summary(data)
     )
+    today_hint = f"\n\n（系统当前日期：{datetime.now().strftime('%Y-%m-%d')}，如需将相对日期转 ISO 请基于此）"
     client = get_client()
     resp = client.chat.completions.create(
         model=config.DEEPSEEK_MODEL,
         messages=[
-            {"role": "system", "content": system},
+            {"role": "system", "content": system + today_hint},
             {"role": "user", "content": user_text},
         ],
         response_format={"type": "json_object"},
@@ -216,6 +229,42 @@ def call_deepseek(user_text, data):
     )
     raw = resp.choices[0].message.content or ""
     return _extract_json(raw)
+
+
+def _merge_timeline_events(dim, events):
+    """把 AI 提取的事件 append 到 dim.timeline，按 date+label 去重，按 date 升序排"""
+    if not events or not isinstance(events, list):
+        return []
+    import hashlib
+    timeline = dim.setdefault("timeline", [])
+    existing_ids = {e.get("id") for e in timeline if e.get("id")}
+    added = []
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        date = (ev.get("date") or "").strip()
+        label = (ev.get("label") or "").strip()
+        note = (ev.get("note") or "").strip()
+        if not date or not label:
+            continue
+        # 简单 ISO 校验
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            continue
+        eid = hashlib.md5((date + "|" + label).encode("utf-8")).hexdigest()[:10]
+        if eid in existing_ids:
+            continue
+        item = {
+            "id": eid,
+            "date": date,
+            "label": label[:24],
+            "note": note[:80],
+            "added_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        timeline.append(item)
+        existing_ids.add(eid)
+        added.append(item)
+    timeline.sort(key=lambda x: x.get("date", ""))
+    return added
 
 
 def _ensure_unique_id(proposed, existing_ids):
@@ -436,6 +485,10 @@ def process(text, data):
             ins = _maybe_grant_insight(out["dimension_id"], result, data)
             if ins:
                 out["insight"] = ins
+            dim = data["dimensions"].get(out["dimension_id"])
+            if dim:
+                added = _merge_timeline_events(dim, result.get("timeline_events"))
+                if added: out["timeline_added"] = added
         return out
     if action == "create":
         out = apply_create(data, result)
@@ -443,6 +496,10 @@ def process(text, data):
             ins = _maybe_grant_insight(out["dimension_id"], result, data)
             if ins:
                 out["insight"] = ins
+            dim = data["dimensions"].get(out["dimension_id"])
+            if dim:
+                added = _merge_timeline_events(dim, result.get("timeline_events"))
+                if added: out["timeline_added"] = added
         return out
     if action == "skip":
         return apply_skip(result)
