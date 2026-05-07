@@ -10,6 +10,7 @@ let weeklyVisible = false;
 let weeklyText = null;
 let globalAchievements = null;
 let currentView = "active"; // 'active' | 'honored' | 'ignored'
+let todayInfo = null;
 
 function escapeHTML(s) {
   return (s || "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -250,6 +251,55 @@ function achCard(item, kind) {
   </div>`;
 }
 
+function todayMetricRow(t) {
+  const total = t.total_today || 0;
+  const dimsCount = t.active_dims_today || 0;
+  const bt = t.by_track || { must: 0, main: 0, side: 0 };
+  const sum = (bt.must || 0) + (bt.main || 0) + (bt.side || 0);
+  const pct = (n) => sum > 0 ? Math.round((n || 0) / sum * 100) : 0;
+  const kind = t.hint_kind || "info";
+  const hint = t.hint || "—";
+  const tt = t.timeline_today || [];
+  const mp = t.must_pending || [];
+
+  let distInner;
+  if (sum === 0) {
+    distInner = `<div class="dist-empty">还没记录</div>`;
+  } else {
+    distInner = `
+      <div class="dist-bar">
+        ${bt.must ? `<div class="dist-seg must" style="width:${pct(bt.must)}%" title="必做 ${bt.must}"></div>` : ""}
+        ${bt.main ? `<div class="dist-seg main" style="width:${pct(bt.main)}%" title="主线 ${bt.main}"></div>` : ""}
+        ${bt.side ? `<div class="dist-seg side" style="width:${pct(bt.side)}%" title="支线 ${bt.side}"></div>` : ""}
+      </div>
+      <div class="dist-legend">
+        ${bt.must ? `<span class="dl must"><i></i>必做 ${bt.must}</span>` : ""}
+        ${bt.main ? `<span class="dl main"><i></i>主线 ${bt.main}</span>` : ""}
+        ${bt.side ? `<span class="dl side"><i></i>支线 ${bt.side}</span>` : ""}
+      </div>`;
+  }
+
+  return `<div class="today-row">
+    <div class="today-card today-count">
+      <div class="metric-label">今天</div>
+      <div class="metric-val">${total}</div>
+      <div class="today-sub">${dimsCount ? dimsCount + ' 个方向' : '尚未开张'}</div>
+    </div>
+    <div class="today-card today-dist">
+      <div class="metric-label">今日分布</div>
+      ${distInner}
+    </div>
+    <div class="today-card today-hint hint-${kind}">
+      <div class="metric-label">提醒</div>
+      <div class="hint-text">${escapeHTML(hint)}</div>
+      <div class="hint-mini-row">
+        ${mp.length ? `<span class="hint-mini must">必做未动 ${mp.length}</span>` : ""}
+        ${tt.length ? `<span class="hint-mini today">今天到期 ${tt.length}</span>` : ""}
+      </div>
+    </div>
+  </div>`;
+}
+
 function metricRow(d) {
   return `<div class="dstat-row">
     <span class="dstat"><b>${d.stats.total_entries}</b> 记录</span>
@@ -406,16 +456,7 @@ function render() {
   const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = fmt(v); };
   setText("cnt-active", cntA); setText("cnt-honored", cntH); setText("cnt-ignored", cntI);
 
-  // 全局指标行（基于全部维度统计）
-  const totalEntries = dims.reduce((s, x) => s + (x.total_entries || 0), 0);
-  const activeDimsHasEntry = dims.filter(x => (x.total_entries || 0) > 0).length;
-  const thisWeek = dims.reduce((s, x) => s + (x.heat || []).slice(-7).reduce((a, b) => a + b, 0), 0);
-
-  let h = `<div class="metric-row">
-    <div class="metric"><div class="metric-label">Total entries</div><div class="metric-val">${totalEntries}</div></div>
-    <div class="metric"><div class="metric-label">Active dimensions</div><div class="metric-val">${activeDimsHasEntry}</div></div>
-    <div class="metric"><div class="metric-label">This week activity</div><div class="metric-val">${thisWeek}</div></div>
-  </div>`;
+  let h = todayMetricRow(todayInfo || {});
 
   // 按当前视图过滤
   const visible = dims.filter(d => (d.state || "active") === currentView);
@@ -941,6 +982,7 @@ async function load() {
     const j = JSON.parse(await window.pywebview.api.get_dimensions(cycleFilter));
     dims = j.dimensions || [];
     globalAchievements = j.global_achievements || null;
+    todayInfo = j.today || null;
     render();
   } catch (e) {
     document.getElementById("app").innerHTML = `<div class="empty">加载失败：${escapeHTML(String(e))}</div>`;

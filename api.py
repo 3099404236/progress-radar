@@ -33,6 +33,69 @@ def _heat_grid(entries, days=35):
     return [counts.get(start + timedelta(days=i), 0) for i in range(days)]
 
 
+def _today_summary(data):
+    """统计今天的活跃情况 + 给一句最优先的提醒"""
+    today_iso = date.today().isoformat()
+    by_track = {"must": 0, "main": 0, "side": 0}
+    active_dims_today = set()
+    must_pending = []
+    timeline_today = []
+    total = 0
+    for did, dim in data.get("dimensions", {}).items():
+        if dim.get("state", "active") != "active":
+            continue
+        track = dim.get("track", "main")
+        had_today = False
+        for e in dim.get("entries", []):
+            ts = e.get("timestamp", "")
+            try:
+                if datetime.fromisoformat(ts).date().isoformat() == today_iso:
+                    by_track[track] = by_track.get(track, 0) + 1
+                    active_dims_today.add(did)
+                    total += 1
+                    had_today = True
+            except Exception:
+                continue
+        if track == "must" and not had_today:
+            must_pending.append({"id": did, "label": dim.get("label", "")})
+        for ev in dim.get("timeline", []):
+            if ev.get("date") == today_iso:
+                timeline_today.append({
+                    "dim": dim.get("label", ""),
+                    "label": ev.get("label", ""),
+                    "note": ev.get("note", ""),
+                })
+
+    # 单条最优先提醒（按优先级）
+    hint, hint_kind = None, "info"
+    if total == 0:
+        hint, hint_kind = "今天还没动过任何维度，从最容易的一件开始。", "warn"
+    elif timeline_today:
+        labels = "、".join(e["label"] for e in timeline_today[:3])
+        hint, hint_kind = f"今天到期：{labels}", "warn"
+    elif must_pending:
+        labels = " / ".join(m["label"] for m in must_pending[:3])
+        hint, hint_kind = f"必做未动：{labels}", "warn"
+    elif by_track["side"] > (by_track["main"] + by_track["must"]):
+        hint, hint_kind = "支线占比偏高，主线方向也推一下。", "warn"
+    elif by_track["main"] >= 1 and not must_pending:
+        hint, hint_kind = "节奏不错，主线已动且必做都覆盖。", "good"
+    elif by_track["main"] >= 1:
+        hint, hint_kind = "主线已动，再补几条必做。", "info"
+    else:
+        hint, hint_kind = "今天可以试着推进一项主线。", "info"
+
+    return {
+        "total_today": total,
+        "active_dims_today": len(active_dims_today),
+        "by_track": by_track,
+        "must_pending": must_pending[:5],
+        "timeline_today": timeline_today[:5],
+        "hint": hint,
+        "hint_kind": hint_kind,
+    }
+
+
 def _annotate_image_status(slots):
     """根据磁盘存在情况修正 image_status（防止后台线程崩溃后状态不一致）"""
     for s in slots:
@@ -219,6 +282,7 @@ class API:
                 "cycle_filter": cycle_filter,
             },
             "global_achievements": _summarize_block(ach.get("global", {})),
+            "today": _today_summary(data),
         }, ensure_ascii=False)
 
     def get_weekly_report(self):
