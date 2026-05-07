@@ -75,36 +75,36 @@ def _today_summary(data):
         labels = "、".join(e["label"] for e in timeline_today[:3])
         more = f"（共 {len(timeline_today)}）" if len(timeline_today) > 3 else ""
         signals.append({"level": "urgent", "kind": "timeline",
-                        "text": f"今天到期：{labels}{more}"})
+                        "text": f"今天有「{labels}」{more}，记得安排时间"})
 
-    # warn — 完全没动
+    # info — 完全没动
     if total == 0:
-        signals.append({"level": "warn", "kind": "idle",
-                        "text": "今天还没动过任何维度，从最容易的一件开始"})
+        signals.append({"level": "info", "kind": "idle",
+                        "text": "还没记录今天的事，要不要从最轻松的一件开始？"})
     else:
-        # warn — 必做未动
+        # info — 日常基本盘可以补
         if must_pending:
             labels = " / ".join(m["label"] for m in must_pending[:3])
-            more = f"（共 {len(must_pending)}）" if len(must_pending) > 3 else ""
-            signals.append({"level": "warn", "kind": "must",
-                            "text": f"必做未动：{labels}{more}"})
+            more = f" 等 {len(must_pending)} 项" if len(must_pending) > 3 else ""
+            signals.append({"level": "info", "kind": "must",
+                            "text": f"建议补一下日常：{labels}{more}"})
 
-        # warn — 主线 / 支线比例失衡
+        # info — 主线 / 支线比例
         if s_cnt >= 2 and s_cnt > m_cnt * 2:
-            signals.append({"level": "warn", "kind": "ratio",
-                            "text": f"支线 {s_cnt} 条、主线 {m_cnt} 条，支线偏多了，主线推一下"})
+            signals.append({"level": "info", "kind": "ratio",
+                            "text": f"支线已经 {s_cnt} 条，主线方向也可以分一点注意力"})
         elif m_cnt == 0 and (s_cnt + mu_cnt) >= 2:
-            signals.append({"level": "warn", "kind": "main_zero",
-                            "text": "主线今天还没推进，挑一件最重要的事"})
+            signals.append({"level": "info", "kind": "main_zero",
+                            "text": "推荐挑一件主线上的事推进一下"})
         elif m_cnt >= 2 and s_cnt == 0 and mu_cnt == 0:
             signals.append({"level": "info", "kind": "main_only",
-                            "text": "全在主线，注意必做的基本盘别落下"})
+                            "text": "今天主线状态不错，记得也照顾下日常基本盘"})
 
-        # good — 主线已动 + 必做都覆盖（且没有其他 warn）
-        has_warn = any(sg["level"] == "warn" for sg in signals)
-        if not has_warn and m_cnt >= 1 and not must_pending:
+        # good — 主线已动 + 必做都覆盖（且没有其他建议）
+        has_other = any(sg["level"] in ("warn", "info") for sg in signals)
+        if not has_other and m_cnt >= 1 and not must_pending:
             signals.append({"level": "good", "kind": "balanced",
-                            "text": "节奏不错，主线已动且必做都覆盖"})
+                            "text": "节奏不错，主线和必做都覆盖到了"})
 
     # 排序：urgent > warn > info > good
     order = {"urgent": 0, "warn": 1, "info": 2, "good": 3}
