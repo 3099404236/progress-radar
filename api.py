@@ -66,24 +66,54 @@ def _today_summary(data):
                     "note": ev.get("note", ""),
                 })
 
-    # 单条最优先提醒（按优先级）
-    hint, hint_kind = None, "info"
-    if total == 0:
-        hint, hint_kind = "今天还没动过任何维度，从最容易的一件开始。", "warn"
-    elif timeline_today:
+    # 多条并发信号（每条独立一种颜色 / 严重度）
+    signals = []
+    m_cnt, s_cnt, mu_cnt = by_track["main"], by_track["side"], by_track["must"]
+
+    # urgent — 今天到期的 timeline
+    if timeline_today:
         labels = "、".join(e["label"] for e in timeline_today[:3])
-        hint, hint_kind = f"今天到期：{labels}", "warn"
-    elif must_pending:
-        labels = " / ".join(m["label"] for m in must_pending[:3])
-        hint, hint_kind = f"必做未动：{labels}", "warn"
-    elif by_track["side"] > (by_track["main"] + by_track["must"]):
-        hint, hint_kind = "支线占比偏高，主线方向也推一下。", "warn"
-    elif by_track["main"] >= 1 and not must_pending:
-        hint, hint_kind = "节奏不错，主线已动且必做都覆盖。", "good"
-    elif by_track["main"] >= 1:
-        hint, hint_kind = "主线已动，再补几条必做。", "info"
+        more = f"（共 {len(timeline_today)}）" if len(timeline_today) > 3 else ""
+        signals.append({"level": "urgent", "kind": "timeline",
+                        "text": f"今天到期：{labels}{more}"})
+
+    # warn — 完全没动
+    if total == 0:
+        signals.append({"level": "warn", "kind": "idle",
+                        "text": "今天还没动过任何维度，从最容易的一件开始"})
     else:
-        hint, hint_kind = "今天可以试着推进一项主线。", "info"
+        # warn — 必做未动
+        if must_pending:
+            labels = " / ".join(m["label"] for m in must_pending[:3])
+            more = f"（共 {len(must_pending)}）" if len(must_pending) > 3 else ""
+            signals.append({"level": "warn", "kind": "must",
+                            "text": f"必做未动：{labels}{more}"})
+
+        # warn — 主线 / 支线比例失衡
+        if s_cnt >= 2 and s_cnt > m_cnt * 2:
+            signals.append({"level": "warn", "kind": "ratio",
+                            "text": f"支线 {s_cnt} 条、主线 {m_cnt} 条，支线偏多了，主线推一下"})
+        elif m_cnt == 0 and (s_cnt + mu_cnt) >= 2:
+            signals.append({"level": "warn", "kind": "main_zero",
+                            "text": "主线今天还没推进，挑一件最重要的事"})
+        elif m_cnt >= 2 and s_cnt == 0 and mu_cnt == 0:
+            signals.append({"level": "info", "kind": "main_only",
+                            "text": "全在主线，注意必做的基本盘别落下"})
+
+        # good — 主线已动 + 必做都覆盖（且没有其他 warn）
+        has_warn = any(sg["level"] == "warn" for sg in signals)
+        if not has_warn and m_cnt >= 1 and not must_pending:
+            signals.append({"level": "good", "kind": "balanced",
+                            "text": "节奏不错，主线已动且必做都覆盖"})
+
+    # 排序：urgent > warn > info > good
+    order = {"urgent": 0, "warn": 1, "info": 2, "good": 3}
+    signals.sort(key=lambda x: order.get(x.get("level", "info"), 5))
+
+    # 兼容字段（旧 UI 用）
+    hint = signals[0]["text"] if signals else "—"
+    hint_kind = signals[0]["level"] if signals else "info"
+    if hint_kind == "urgent": hint_kind = "warn"  # 旧 UI 没有 urgent
 
     return {
         "total_today": total,
@@ -91,6 +121,7 @@ def _today_summary(data):
         "by_track": by_track,
         "must_pending": must_pending[:5],
         "timeline_today": timeline_today[:5],
+        "signals": signals,
         "hint": hint,
         "hint_kind": hint_kind,
     }

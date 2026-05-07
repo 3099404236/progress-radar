@@ -257,10 +257,7 @@ function todayMetricRow(t) {
   const bt = t.by_track || { must: 0, main: 0, side: 0 };
   const sum = (bt.must || 0) + (bt.main || 0) + (bt.side || 0);
   const pct = (n) => sum > 0 ? Math.round((n || 0) / sum * 100) : 0;
-  const kind = t.hint_kind || "info";
-  const hint = t.hint || "—";
-  const tt = t.timeline_today || [];
-  const mp = t.must_pending || [];
+  const signals = t.signals || [];
 
   let distInner;
   if (sum === 0) {
@@ -279,6 +276,18 @@ function todayMetricRow(t) {
       </div>`;
   }
 
+  let signalsHTML;
+  if (!signals.length) {
+    signalsHTML = `<div class="signal-empty">—</div>`;
+  } else {
+    signalsHTML = signals.map(sg =>
+      `<div class="signal lvl-${sg.level || 'info'} kind-${sg.kind || ''}">${escapeHTML(sg.text || '')}</div>`
+    ).join("");
+  }
+
+  // 卡片本身的高亮颜色取最高级别信号
+  const topLevel = signals.length ? signals[0].level : "info";
+
   return `<div class="today-row">
     <div class="today-card today-count">
       <div class="metric-label">今天</div>
@@ -289,13 +298,9 @@ function todayMetricRow(t) {
       <div class="metric-label">今日分布</div>
       ${distInner}
     </div>
-    <div class="today-card today-hint hint-${kind}">
-      <div class="metric-label">提醒</div>
-      <div class="hint-text">${escapeHTML(hint)}</div>
-      <div class="hint-mini-row">
-        ${mp.length ? `<span class="hint-mini must">必做未动 ${mp.length}</span>` : ""}
-        ${tt.length ? `<span class="hint-mini today">今天到期 ${tt.length}</span>` : ""}
-      </div>
+    <div class="today-card today-hint hint-${topLevel}">
+      <div class="metric-label">提醒 · ${signals.length || 0}</div>
+      <div class="signals">${signalsHTML}</div>
     </div>
   </div>`;
 }
