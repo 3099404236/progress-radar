@@ -6,6 +6,8 @@ import logging
 import hashlib
 from datetime import datetime, timedelta, date
 
+import threading
+
 import config
 import data_store
 import ai_processor
@@ -15,6 +17,10 @@ import raw_archive
 import image_generator
 
 log = logging.getLogger("progressradar.api")
+
+# 全局互斥锁：所有改 progress.json 的入口共用，保证 load → 改 → save 原子
+# pywebview js_api 每次调用一个独立线程，必须串行化对 progress 的写入
+_submit_lock = threading.RLock()
 
 
 def _heat_grid(entries, days=35):
@@ -177,58 +183,62 @@ class API:
     # ---------- 写入 ----------
 
     def submit(self, text):
-        try:
-            text = (text or "").strip()
-            if not text:
-                return json.dumps({"status": "error", "message": "内容为空"}, ensure_ascii=False)
-
-            data = data_store.load()
-            text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
-            seen = data.setdefault("meta", {}).setdefault("seen_hashes", [])
-            if text_hash in seen:
-                result = {"status": "ok", "action": "skip", "reason": "重复内容（已提交过）"}
-                try: raw_archive.append(text, result)
-                except Exception: log.exception("归档失败")
-                return json.dumps(result, ensure_ascii=False)
-
-            result = ai_processor.process(text, data)
-
-            if result.get("status") == "ok" and result.get("action") in ("update", "create"):
-                seen.append(text_hash)
-                if len(seen) > 500:
-                    del seen[: len(seen) - 500]
-
-            data_store.save(data)
-
-            if result.get("status") == "ok" and result.get("action") in ("update", "create"):
-                try:
-                    newly, _ = achievement_checker.check(data, result.get("dimension_id"))
-                    if newly:
-                        result["unlocked"] = newly
-                except Exception:
-                    log.exception("成就检查失败")
-
+        # 全局串行化：避免并发提交时 load→改→save 互相覆盖
+        with _submit_lock:
             try:
-                raw_archive.append(text, result)
-            except Exception:
-                log.exception("归档失败")
+                text = (text or "").strip()
+                if not text:
+                    return json.dumps({"status": "error", "message": "内容为空"}, ensure_ascii=False)
 
-            return json.dumps(result, ensure_ascii=False)
-        except Exception as e:
-            log.exception("submit 崩溃")
-            return json.dumps({"status": "error", "message": f"submit 异常: {type(e).__name__}: {e}"}, ensure_ascii=False)
+                data = data_store.load()
+                text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
+                seen = data.setdefault("meta", {}).setdefault("seen_hashes", [])
+                if text_hash in seen:
+                    result = {"status": "ok", "action": "skip", "reason": "重复内容（已提交过）"}
+                    try: raw_archive.append(text, result)
+                    except Exception: log.exception("归档失败")
+                    return json.dumps(result, ensure_ascii=False)
+
+                result = ai_processor.process(text, data)
+
+                if result.get("status") == "ok" and result.get("action") in ("update", "create"):
+                    seen.append(text_hash)
+                    if len(seen) > 500:
+                        del seen[: len(seen) - 500]
+
+                data_store.save(data)
+
+                if result.get("status") == "ok" and result.get("action") in ("update", "create"):
+                    try:
+                        newly, _ = achievement_checker.check(data, result.get("dimension_id"))
+                        if newly:
+                            result["unlocked"] = newly
+                    except Exception:
+                        log.exception("成就检查失败")
+
+                try:
+                    raw_archive.append(text, result)
+                except Exception:
+                    log.exception("归档失败")
+
+                return json.dumps(result, ensure_ascii=False)
+            except Exception as e:
+                log.exception("submit 崩溃")
+                return json.dumps({"status": "error", "message": f"submit 异常: {type(e).__name__}: {e}"}, ensure_ascii=False)
 
     def confirm_evolution(self, evolution_id, accepted):
-        data = data_store.load()
-        result = ai_processor.confirm_evolution(data, evolution_id, bool(accepted))
-        data_store.save(data)
-        return json.dumps(result, ensure_ascii=False)
+        with _submit_lock:
+            data = data_store.load()
+            result = ai_processor.confirm_evolution(data, evolution_id, bool(accepted))
+            data_store.save(data)
+            return json.dumps(result, ensure_ascii=False)
 
     def resolve_confirm(self, confirm_id, dimension_id):
-        data = data_store.load()
-        result = ai_processor.resolve_confirm(data, confirm_id, dimension_id)
-        data_store.save(data)
-        return json.dumps(result, ensure_ascii=False)
+        with _submit_lock:
+            data = data_store.load()
+            result = ai_processor.resolve_confirm(data, confirm_id, dimension_id)
+            data_store.save(data)
+            return json.dumps(result, ensure_ascii=False)
 
     # ---------- 读取 ----------
 
@@ -559,6 +569,7 @@ class API:
     def replay_raw(self, raw_id):
         """用当前 prompt 重新处理某条已归档的原文（即使之前是 skip / 重复也会重跑）。
         replay 走完后会同步等待新解锁成就的图都生成完，避免 daemon 线程被杀图丢失。"""
+        _submit_lock.acquire()
         try:
             items = raw_archive.read_all()
             item = next((x for x in items if x.get("id") == raw_id), None)
@@ -600,6 +611,8 @@ class API:
         except Exception as e:
             log.exception("replay_raw 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+        finally:
+            _submit_lock.release()
 
     @staticmethod
     def _find_slot_by_image_id(ach, image_id):
