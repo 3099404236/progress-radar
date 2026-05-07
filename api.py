@@ -348,19 +348,36 @@ class API:
         return json.dumps({"ok": True})
 
     def show_paste(self):
-        if self._paste_window:
+        """显示粘贴窗口并强制置顶 + 抢焦点"""
+        if not self._paste_window:
+            return json.dumps({"ok": True})
+        try:
+            self._paste_window.show()
+            # restore() 会调 SetForegroundWindow 把窗口拉到前面（pywebview 5.4 无 focus()）
+            try: self._paste_window.restore()
+            except Exception: pass
+            # 兜底：用 ctypes 调 Win32 SetForegroundWindow / BringWindowToTop
             try:
-                self._paste_window.show()
-                try:
-                    self._paste_window.evaluate_js(
-                        "(function(){var a=document.getElementById('paste-area');"
-                        "if(a){a.focus();}})();"
-                    )
-                except Exception:
-                    pass
-            except Exception as e:
-                log.exception("show_paste 失败")
-                return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
+                import ctypes
+                user32 = ctypes.windll.user32
+                hwnd = user32.FindWindowW(None, "快速粘贴")
+                if hwnd:
+                    user32.ShowWindow(hwnd, 5)         # SW_SHOW
+                    user32.SetForegroundWindow(hwnd)
+                    user32.BringWindowToTop(hwnd)
+            except Exception:
+                pass
+            # 把焦点打到 textarea
+            try:
+                self._paste_window.evaluate_js(
+                    "(function(){var a=document.getElementById('paste-area');"
+                    "if(a){a.focus();}})();"
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            log.exception("show_paste 失败")
+            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
         return json.dumps({"ok": True})
 
     def hide_paste(self):
