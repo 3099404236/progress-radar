@@ -1174,3 +1174,8 @@ async function bootstrap() {
 window.addEventListener("pywebviewready", bootstrap);
 setTimeout(() => { if (window.pywebview && window.pywebview.api && !dims.length) bootstrap(); }, 1000);
 setInterval(load, 30000);
+
+// 后端任何写操作完成后会派发这个事件 → 立即拉新数据
+window.addEventListener("progress-changed", () => {
+  if (window.pywebview && window.pywebview.api) load();
+});

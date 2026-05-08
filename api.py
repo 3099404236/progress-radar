@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """JS Bridge：前端 window.pywebview.api.xxx() 直接调到这里，无需 HTTP"""
+import functools
 import os
 import json
 import logging
@@ -21,6 +22,23 @@ log = logging.getLogger("progressradar.api")
 # 全局互斥锁：所有改 progress.json 的入口共用，保证 load → 改 → save 原子
 # pywebview js_api 每次调用一个独立线程，必须串行化对 progress 的写入
 _submit_lock = threading.RLock()
+
+
+def _notify_after(fn):
+    """装饰器：方法跑完后通知 dashboard 立即重 load
+    用 evaluate_js 跨窗口发 'progress-changed' 事件，dashboard.js 监听刷新。"""
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        result = fn(self, *args, **kwargs)
+        try:
+            if self._main_window:
+                self._main_window.evaluate_js(
+                    "window.dispatchEvent(new Event('progress-changed'));"
+                )
+        except Exception:
+            log.exception("notify dashboard 失败")
+        return result
+    return wrapper
 
 
 def _heat_grid(entries, days=35):
@@ -182,6 +200,7 @@ class API:
 
     # ---------- 写入 ----------
 
+    @_notify_after
     def submit(self, text):
         # 全局串行化：避免并发提交时 load→改→save 互相覆盖
         with _submit_lock:
@@ -241,6 +260,7 @@ class API:
                 log.exception("submit 崩溃")
                 return json.dumps({"status": "error", "message": f"submit 异常: {type(e).__name__}: {e}"}, ensure_ascii=False)
 
+    @_notify_after
     def confirm_evolution(self, evolution_id, accepted):
         with _submit_lock:
             data = data_store.load()
@@ -248,6 +268,7 @@ class API:
             data_store.save(data)
             return json.dumps(result, ensure_ascii=False)
 
+    @_notify_after
     def resolve_confirm(self, confirm_id, dimension_id):
         with _submit_lock:
             data = data_store.load()
@@ -426,6 +447,7 @@ class API:
             log.exception("get_achievements 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    @_notify_after
     def create_custom_achievement(self, dimension_id, title, condition_text, rarity="rare", visual_concept=""):
         try:
             data = data_store.load()
@@ -521,6 +543,7 @@ class API:
             log.exception("warm_card_images 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    @_notify_after
     def unlock_custom_achievement(self, dimension_id, title):
         try:
             item = achievement_checker.unlock_custom(dimension_id, title)
@@ -529,6 +552,7 @@ class API:
             log.exception("unlock_custom 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    @_notify_after
     def regenerate_themed_milestones(self, dimension_id):
         """重新为某维度按主题生成 13 个 milestone 名（覆盖现有 themed）"""
         try:
@@ -581,6 +605,7 @@ class API:
             log.exception("get_raw_recent 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    @_notify_after
     def replay_raw(self, raw_id):
         """用当前 prompt 重新处理某条已归档的原文（即使之前是 skip / 重复也会重跑）。
         replay 走完后会同步等待新解锁成就的图都生成完，避免 daemon 线程被杀图丢失。"""
@@ -697,6 +722,7 @@ class API:
 
     # ---------- 时间轴 ----------
 
+    @_notify_after
     def add_timeline_event(self, dimension_id, date, label, note=""):
         """date: YYYY-MM-DD"""
         try:
@@ -722,6 +748,7 @@ class API:
             log.exception("add_timeline_event 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    @_notify_after
     def remove_timeline_event(self, dimension_id, event_id):
         try:
             data = data_store.load()
@@ -736,6 +763,7 @@ class API:
 
     # ---------- 维度状态：进行中 / 荣誉 / 忽视 ----------
 
+    @_notify_after
     def set_dim_state(self, dimension_id, state):
         """state ∈ {'active', 'honored', 'ignored'}"""
         try:
@@ -755,6 +783,7 @@ class API:
 
     # ---------- 主线/支线/必做 三栏布局 ----------
 
+    @_notify_after
     def set_track_layout(self, layout_json):
         """layout_json: '{"must":["id1","id2"],"main":["id3"],"side":["id4"]}'
         前端拖完整理出每栏的有序 ID 列表，整体覆盖。"""
@@ -778,6 +807,7 @@ class API:
 
     # ---------- 手动编辑 ----------
 
+    @_notify_after
     def edit_dimension(self, dimension_id, payload_json):
         data = data_store.load()
         dim = data["dimensions"].get(dimension_id)
@@ -802,6 +832,7 @@ class API:
         data_store.save(data)
         return json.dumps({"status": "ok"}, ensure_ascii=False)
 
+    @_notify_after
     def delete_dimension(self, dimension_id):
         data = data_store.load()
         if dimension_id in data["dimensions"]:
