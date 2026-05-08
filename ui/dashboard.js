@@ -289,13 +289,13 @@ function todayMetricRow(t) {
   const topLevel = signals.length ? signals[0].level : "info";
 
   return `<div class="today-row">
-    <div class="today-card today-count">
+    <div class="today-card today-count clickable" id="today-count-card" title="点击查看今日活动列表">
       <div class="metric-label">今天</div>
       <div class="metric-val">${total}</div>
-      <div class="today-sub">${dimsCount ? dimsCount + ' 个方向' : '尚未开张'}</div>
+      <div class="today-sub">${dimsCount ? dimsCount + ' 个方向 · 点击查看' : '尚未开张'}</div>
     </div>
-    <div class="today-card today-dist">
-      <div class="metric-label">今日分布</div>
+    <div class="today-card today-dist clickable" id="today-dist-card" title="点击查看今日活动列表">
+      <div class="metric-label">今日分布 · 点击查看</div>
       ${distInner}
     </div>
     <div class="today-card today-hint hint-${topLevel}">
@@ -542,6 +542,12 @@ function render() {
 
   app.innerHTML = h;
 
+  // 顶部"今天 / 分布"卡片点击 → 今日活动 modal
+  ["today-count-card", "today-dist-card"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", openTodayModal);
+  });
+
   // 卡片点击展开详情；拖拽行为见 wireDragAndDrop
   app.querySelectorAll(".dim-card").forEach(card => {
     card.addEventListener("click", (e) => {
@@ -746,6 +752,89 @@ function wireDragAndDrop() {
       else zone.appendChild(src);
       dragSrcId = null;
       persistTrackLayout();
+    });
+  });
+}
+
+// ---------- 今日活动 modal ----------
+
+async function openTodayModal() {
+  if (!window.pywebview || !window.pywebview.api) return;
+  let data;
+  try {
+    data = JSON.parse(await window.pywebview.api.get_today_entries());
+  } catch (e) {
+    alert("加载失败：" + e); return;
+  }
+  if (data.status !== "ok") { alert("失败：" + (data.message || "")); return; }
+  const items = data.items || [];
+
+  let body;
+  if (!items.length) {
+    body = `<div class="today-modal-empty">今天还没有任何记录。点 + 粘贴 写点什么吧。</div>`;
+  } else {
+    body = `<ul class="today-list">`;
+    for (const it of items) {
+      const trk = it.track || "main";
+      body += `<li class="today-item track-${trk}" data-dim-id="${escapeHTML(it.dim_id)}">
+        <div class="today-time">${escapeHTML(it.time)}</div>
+        <div class="today-meat">
+          <div class="today-line1">
+            <span class="today-dim-pill ${trk}">${escapeHTML(it.dim_label)}</span>
+            <span class="today-phase">${escapeHTML(it.phase_name)}</span>
+            ${it.tag ? `<span class="entry-tag">${escapeHTML(it.tag)}</span>` : ""}
+            ${(it.cross_dimensions||[]).length ? `<span class="today-cross">↔ ${(it.cross_dimensions||[]).map(escapeHTML).join("、")}</span>` : ""}
+          </div>
+          <div class="today-summary">${escapeHTML(it.summary)}</div>
+          ${(it.key_progress||[]).length ? `<ul class="today-kp">${it.key_progress.map(kp=>`<li>${escapeHTML(kp)}</li>`).join("")}</ul>` : ""}
+        </div>
+      </li>`;
+    }
+    body += `</ul>`;
+  }
+
+  // 按 track 计数
+  const cnt = items.reduce((acc, it) => { acc[it.track || "main"] = (acc[it.track || "main"] || 0) + 1; return acc; }, {});
+
+  const modal = document.createElement("div");
+  modal.className = "today-modal";
+  modal.innerHTML = `
+    <div class="today-modal-bg"></div>
+    <div class="today-modal-card">
+      <div class="today-modal-head">
+        <div>
+          <div class="today-modal-title">今天的活动 · ${items.length} 条</div>
+          <div class="today-modal-sub">
+            必做 ${cnt.must || 0} · 主线 ${cnt.main || 0} · 支线 ${cnt.side || 0}
+          </div>
+        </div>
+        <button class="tl-close" data-close>×</button>
+      </div>
+      <div class="today-modal-body">${body}</div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector(".today-modal-bg").addEventListener("click", () => modal.remove());
+  modal.querySelector("[data-close]").addEventListener("click", () => modal.remove());
+  document.addEventListener("keydown", function esc(e) {
+    if (e.key === "Escape") { modal.remove(); document.removeEventListener("keydown", esc); }
+  });
+  // 点击维度 pill / item → 跳转到对应维度详情
+  modal.querySelectorAll(".today-item").forEach(li => {
+    li.addEventListener("click", () => {
+      const id = li.dataset.dimId;
+      modal.remove();
+      selected = id;
+      currentView = "active";
+      document.querySelectorAll("#dash-side .side-tab").forEach(b =>
+        b.classList.toggle("on", b.dataset.view === "active")
+      );
+      render();
+      setTimeout(() => {
+        const card = document.querySelector(`.dim-card[data-id="${id}"]`);
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
     });
   });
 }

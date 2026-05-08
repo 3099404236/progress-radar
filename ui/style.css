@@ -170,6 +170,20 @@ button { font-family: inherit; cursor: pointer; }
 .fb-next { color: var(--color-text-secondary); font-size: 11.5px; }
 .fb-next b { color: var(--color-text-primary); font-weight: 500; }
 
+/* multi action 的反馈卡 */
+.multi-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.multi-row {
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.03);
+  border-left: 2px solid var(--color-accent);
+  border-radius: 3px;
+  font-size: 11.5px; line-height: 1.5;
+}
+.multi-row .fb-pill { font-size: 10px; padding: 1px 6px; margin-right: 6px; }
+.multi-row .fb-title { font-size: 12px; font-weight: 600; }
+.multi-phase { font-size: 11px; color: var(--color-text-tertiary); margin-left: 6px; }
+.multi-summary { color: var(--color-text-primary); margin-top: 2px; }
+
 .confirm-options { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .confirm-options .btn { font-size: 12px; padding: 5px 12px; }
 
@@ -926,3 +940,62 @@ button { font-family: inherit; cursor: pointer; }
 .fb-unlock-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .fb-unlock-item { font-size: 11.5px; color: var(--color-text-secondary); padding: 4px 8px; background: rgba(240,200,112,0.08); border-left: 2px solid #f0c870; border-radius: 3px; }
 .fb-unlock-item b { color: #f0c870; font-weight: 600; }
+
+/* 今天卡片可点击 */
+.today-card.clickable { cursor: pointer; transition: border-color .15s, background .15s; }
+.today-card.clickable:hover { border-color: var(--color-accent); }
+
+/* 今日活动 modal */
+.today-modal { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; animation: fadeIn .15s; }
+.today-modal-bg { position: absolute; inset: 0; background: rgba(0,0,0,0.78); backdrop-filter: blur(6px); }
+.today-modal-card {
+  position: relative; width: 640px; max-width: 92vw; max-height: 88vh;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column;
+  animation: cardIn .25s cubic-bezier(.2,.8,.3,1);
+}
+.today-modal-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 18px 22px 14px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+.today-modal-title { font-size: 17px; font-weight: 700; letter-spacing: 0.5px; color: var(--color-text-primary); }
+.today-modal-sub { font-size: 12px; color: var(--color-text-tertiary); margin-top: 4px; letter-spacing: 0.4px; }
+.today-modal-body { padding: 16px 22px 20px; overflow-y: auto; flex: 1; }
+.today-modal-empty { font-size: 13px; color: var(--color-text-tertiary); text-align: center; padding: 32px 0; }
+
+.today-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.today-item {
+  display: flex; gap: 14px;
+  padding: 12px 14px;
+  background: var(--color-background-tertiary);
+  border-left: 3px solid var(--color-text-tertiary);
+  border-radius: var(--border-radius-md);
+  cursor: pointer;
+  transition: transform .12s, box-shadow .12s;
+}
+.today-item:hover { transform: translateX(2px); box-shadow: var(--shadow-sm); }
+.today-item.track-must { border-left-color: #6cd0d0; }
+.today-item.track-main { border-left-color: #ffd87a; }
+.today-item.track-side { border-left-color: #b8a8f0; }
+.today-time {
+  font-size: 13px; font-weight: 600; color: var(--color-text-primary);
+  min-width: 46px; padding-top: 1px; letter-spacing: 0.5px;
+}
+.today-meat { flex: 1; min-width: 0; }
+.today-line1 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.today-dim-pill {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+  background: rgba(255,255,255,0.05); color: var(--color-text-secondary);
+}
+.today-dim-pill.must { background: rgba(108,208,208,0.18); color: #6cd0d0; }
+.today-dim-pill.main { background: rgba(255,216,122,0.16); color: #ffd87a; }
+.today-dim-pill.side { background: rgba(184,168,240,0.18); color: #b8a8f0; }
+.today-phase { font-size: 11px; color: var(--color-text-tertiary); }
+.today-cross { font-size: 10.5px; color: var(--color-text-tertiary); }
+.today-summary { font-size: 13px; color: var(--color-text-primary); line-height: 1.5; margin-top: 2px; }
+.today-kp { margin: 4px 0 0 16px; padding: 0; font-size: 11.5px; color: var(--color-text-secondary); line-height: 1.5; }
+.today-kp li { list-style: disc; }

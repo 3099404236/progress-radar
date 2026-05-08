@@ -132,6 +132,26 @@ cycle_event = {{"type":"new_cycle","reason":"...","new_cycle_number":N,"reset_pr
 ### 第七步：下一步建议
 - 1-3个具体可执行的下一步
 
+### 第七A步：多任务分发 ⭐⭐
+若一条提交包含**多个独立动作 / 涉及多个不同维度**，返回 action="multi"，把每件事拆成一个独立的 sub_action。
+
+判断口诀：
+- "做了 A 又做了 B" / "A，然后 B" / "A、B、C" 这种**并列动作** → 拆
+- "今天 A 跟 B 都搞了" → 拆
+- "做了 A，B 进展是 C" 当 A 和 B 是不同方向 → 拆
+- 多个细节描述**同一件事** → 不拆（如"今天 conformal 跑了多资产 VaR 实验，结果优于椭球投影" 是一件事的细节）
+
+显式例：
+- "烧了水吃了早餐" → multi: [update water_intake / 烧水, update breakfast / 早餐]
+- "今天看了 3 章书 + 做了俯卧撑" → multi: [update reading, update fitness]
+- "完成了 conformal 实验、改了波动率论文" → multi: [update conformal_prediction, update volatility_paper]
+- "v1 模型跑通了实验" → 单条 update（一件事的两个细节）
+
+输出格式：
+{{"action":"multi","sub_actions":[<完整 update 或 create JSON>, <...>]}}
+每个 sub_action 必须包含完整字段（dimension_id/summary/phase_index/...）。
+所有支持的字段（cycle_event、achievement、timeline_events 等）依然各自独立。
+
 ### 第七B步：时间轴事件提取 ⭐（仅当内容含具体日期或可推算的相对日期）
 - 仅当用户提到"X月X日 / MM-DD / 某月某号 / 周X / N天后"这种**带具体日期**的事件预告/截止时提取
 - 输出 `timeline_events` 数组（没有就给 `[]`）
@@ -158,6 +178,9 @@ cycle_event = {{"type":"new_cycle","reason":"...","new_cycle_number":N,"reset_pr
 
 ## 输出格式
 严格 JSON，以下场景之一：
+
+A0. 多动作分发 → multi（一条提交包含多个独立动作）：
+{{"action":"multi","sub_actions":[<完整 update 或 create JSON>,<...>]}}
 
 A. 匹配已有维度 → update：
 {{"action":"update","dimension_id":"...","summary":"...","key_progress":["..."],"tag":"...","phase_index":N,"progress_delta":"...","next_steps":["..."],"cross_dimensions":[],"cycle_event":null,"achievement":null,"timeline_events":[]}}
@@ -492,35 +515,56 @@ def process(text, data):
         log.exception("AI 调用失败")
         return {"status": "error", "message": f"AI调用失败: {type(e).__name__}: {e}"}
 
+    return _dispatch(result, data, text)
+
+
+def _apply_one(sub, data):
+    """一个 sub_action（update 或 create）的完整 apply：含 insight + timeline_events"""
+    a = sub.get("action")
+    if a == "update":
+        out = apply_update(data, sub)
+    elif a == "create":
+        out = apply_create(data, sub)
+    else:
+        return {"status": "error", "message": f"sub_action 不支持 {a}", "raw": sub}
+    if out.get("status") == "ok":
+        ins = _maybe_grant_insight(out["dimension_id"], sub, data)
+        if ins:
+            out["insight"] = ins
+        dim = data["dimensions"].get(out["dimension_id"])
+        if dim:
+            added = _merge_timeline_events(dim, sub.get("timeline_events"))
+            if added:
+                out["timeline_added"] = added
+    return out
+
+
+def _dispatch(result, data, text):
     action = result.get("action")
-    if action == "update":
-        out = apply_update(data, result)
-        if out.get("status") == "ok":
-            ins = _maybe_grant_insight(out["dimension_id"], result, data)
-            if ins:
-                out["insight"] = ins
-            dim = data["dimensions"].get(out["dimension_id"])
-            if dim:
-                added = _merge_timeline_events(dim, result.get("timeline_events"))
-                if added: out["timeline_added"] = added
-        return out
-    if action == "create":
-        out = apply_create(data, result)
-        if out.get("status") == "ok":
-            ins = _maybe_grant_insight(out["dimension_id"], result, data)
-            if ins:
-                out["insight"] = ins
-            dim = data["dimensions"].get(out["dimension_id"])
-            if dim:
-                added = _merge_timeline_events(dim, result.get("timeline_events"))
-                if added: out["timeline_added"] = added
-        return out
+    if action in ("update", "create"):
+        return _apply_one(result, data)
     if action == "skip":
         return apply_skip(result)
     if action == "evolve":
         return stash_evolve(data, result, text)
     if action == "confirm":
         return stash_confirm(data, result, text)
+    if action == "multi":
+        subs = result.get("sub_actions") or []
+        if not subs:
+            return {"status": "error", "message": "multi 但 sub_actions 为空", "raw": result}
+        results = []
+        for sub in subs:
+            r = _apply_one(sub, data)
+            results.append(r)
+        ok_count = sum(1 for r in results if r.get("status") == "ok")
+        return {
+            "status": "ok",
+            "action": "multi",
+            "count": len(results),
+            "ok_count": ok_count,
+            "results": results,
+        }
     return {"status": "error", "message": f"未知 action: {action}", "raw": result}
 
 

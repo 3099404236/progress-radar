@@ -67,12 +67,42 @@ function renderUnlocks(r) {
   return h;
 }
 
+function renderMultiRow(r) {
+  if (r.action === "update") {
+    return `<div class="multi-row">
+      <span class="fb-pill">已记录</span>
+      <span class="fb-title">${escapeHTML(r.dimension_label || "")}</span>
+      <span class="multi-phase">阶段：${escapeHTML(r.phase_name || "")}</span>
+      <div class="multi-summary">${escapeHTML(r.summary || "")}</div>
+    </div>`;
+  }
+  if (r.action === "create") {
+    return `<div class="multi-row">
+      <span class="fb-pill create">新维度</span>
+      <span class="fb-title">${escapeHTML(r.dimension_label || "")}</span>
+      <span class="multi-phase">${(r.phases || []).map(escapeHTML).join(" → ")}</span>
+      <div class="multi-summary">${escapeHTML(r.summary || "")}</div>
+    </div>`;
+  }
+  return `<div class="multi-row"><span class="fb-pill error">${escapeHTML(r.action || "?")}</span><div class="multi-summary">${escapeHTML(r.message || "")}</div></div>`;
+}
+
 function renderResult(r) {
   if (r.status === "error") {
     setFeedback(`<div class="fb-head"><span class="fb-pill error">错误</span></div><div class="fb-summary">${escapeHTML(r.message || "未知错误")}</div>`, "error");
     return { keepText: true };
   }
   const a = r.action;
+  if (a === "multi") {
+    const rows = (r.results || []).map(renderMultiRow).join("");
+    setFeedback(
+      `<div class="fb-head"><span class="fb-pill">多任务 ×${r.count}</span><span class="fb-title">已记录到 ${r.ok_count} 个维度</span></div>
+       <div class="multi-list">${rows}</div>
+       ${renderUnlocks(r)}`,
+      "ok"
+    );
+    return { keepText: false, hasUnlocks: !!(r.unlocked && r.unlocked.length) };
+  }
   if (a === "skip") {
     setFeedback(`<div class="fb-head"><span class="fb-pill skip">已忽略</span></div><div class="fb-summary">${escapeHTML(r.reason || "无实质进展")}</div>`, "skip");
     return { keepText: false };

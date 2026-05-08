@@ -201,18 +201,33 @@ class API:
 
                 result = ai_processor.process(text, data)
 
-                if result.get("status") == "ok" and result.get("action") in ("update", "create"):
+                written = (
+                    result.get("status") == "ok"
+                    and result.get("action") in ("update", "create", "multi")
+                )
+                if written:
                     seen.append(text_hash)
                     if len(seen) > 500:
                         del seen[: len(seen) - 500]
 
                 data_store.save(data)
 
-                if result.get("status") == "ok" and result.get("action") in ("update", "create"):
+                if written:
                     try:
-                        newly, _ = achievement_checker.check(data, result.get("dimension_id"))
-                        if newly:
-                            result["unlocked"] = newly
+                        if result.get("action") == "multi":
+                            all_unlocked = []
+                            for r in result.get("results", []):
+                                if r.get("status") == "ok" and r.get("action") in ("update", "create"):
+                                    newly, _ = achievement_checker.check(data, r.get("dimension_id"))
+                                    if newly:
+                                        r["unlocked"] = newly
+                                        all_unlocked.extend(newly)
+                            if all_unlocked:
+                                result["unlocked"] = all_unlocked
+                        else:
+                            newly, _ = achievement_checker.check(data, result.get("dimension_id"))
+                            if newly:
+                                result["unlocked"] = newly
                     except Exception:
                         log.exception("成就检查失败")
 
@@ -638,6 +653,46 @@ class API:
             return json.dumps({"status": "ok", "count": count, "path": path}, ensure_ascii=False)
         except Exception as e:
             log.exception("export_raw 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+    # ---------- 今日活动列表 ----------
+
+    def get_today_entries(self):
+        try:
+            today_iso = date.today().isoformat()
+            data = data_store.load()
+            items = []
+            for did, dim in data["dimensions"].items():
+                if dim.get("state", "active") != "active":
+                    continue
+                phases = dim.get("phases", [])
+                for e in dim.get("entries", []):
+                    ts = e.get("timestamp", "")
+                    try:
+                        if datetime.fromisoformat(ts).date().isoformat() != today_iso:
+                            continue
+                    except Exception:
+                        continue
+                    pi = e.get("phase_index", 0)
+                    pname = phases[pi]["name"] if 0 <= pi < len(phases) else ""
+                    items.append({
+                        "ts": ts,
+                        "time": ts[11:16] if len(ts) >= 16 else ts,
+                        "dim_id": did,
+                        "dim_label": dim.get("label", ""),
+                        "track": dim.get("track", "main"),
+                        "phase_index": pi,
+                        "phase_name": pname,
+                        "summary": e.get("summary", ""),
+                        "tag": e.get("tag", ""),
+                        "key_progress": e.get("key_progress", []),
+                        "cycle": e.get("cycle", 1),
+                        "cross_dimensions": e.get("cross_dimensions", []),
+                    })
+            items.sort(key=lambda x: x["ts"], reverse=True)
+            return json.dumps({"status": "ok", "items": items, "count": len(items)}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("get_today_entries 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     # ---------- 时间轴 ----------
