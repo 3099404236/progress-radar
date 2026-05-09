@@ -12,6 +12,7 @@ data/raw_submissions.jsonl
 data/notes.json
 data/scratchpad.txt
 data/scratchpad.meta.json
+data/scratchpad.history.json
 data/app.log*
 data/weekly/
 data/achievement_images/

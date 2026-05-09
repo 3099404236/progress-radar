@@ -760,6 +760,13 @@ class API:
             log.exception("save_scratchpad 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    def get_scratchpad_history(self):
+        try:
+            return json.dumps({"status": "ok", "history": notes_store.list_history()}, ensure_ascii=False)
+        except Exception as e:
+            log.exception("get_scratchpad_history 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
     # ---------- 今日活动列表 ----------
 
     def get_today_entries(self):

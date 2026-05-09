@@ -1063,7 +1063,10 @@ async function persistTrackLayout() {
   } catch (e) { console.warn("布局保存失败:", e); }
 }
 
-// ---------- 临时记事本（单 textarea） ----------
+// ---------- 临时记事本（单 textarea + 自动保存 + 历史） ----------
+
+let _padAutoTimer = null;
+const PAD_AUTOSAVE_DELAY = 1500;  // ms
 
 async function loadScratchpad() {
   if (!window.pywebview || !window.pywebview.api) return;
@@ -1083,45 +1086,134 @@ function renderScratchpad() {
     <div class="pad-shell">
       <div class="pad-head">
         <div class="pad-meta" id="pad-meta">${escapeHTML(upd)}</div>
-        <button class="btn" id="pad-save-btn">保存（Ctrl+S）</button>
+        <div class="pad-actions">
+          <button class="bar-link" id="pad-history-btn">历史版本</button>
+          <span class="pad-status" id="pad-status">自动保存</span>
+        </div>
       </div>
-      <textarea id="pad-content" class="pad-textarea" placeholder="临时记一笔 · Ctrl+S 保存"></textarea>
+      <textarea id="pad-content" class="pad-textarea" placeholder="临时记一笔 · 边打边自动保存，每次保存的旧版本都会留底，从「历史版本」可恢复"></textarea>
     </div>
   `;
   const ta = document.getElementById("pad-content");
   ta.value = scratchpad.content || "";
   ta.focus();
 
-  ta.addEventListener("input", () => { scratchpadDirty = true; });
+  ta.addEventListener("input", () => {
+    scratchpadDirty = true;
+    setPadStatus("…正在输入");
+    if (_padAutoTimer) clearTimeout(_padAutoTimer);
+    _padAutoTimer = setTimeout(saveScratchpad, PAD_AUTOSAVE_DELAY);
+  });
   ta.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault(); saveScratchpad();
     }
   });
-  document.getElementById("pad-save-btn").addEventListener("click", saveScratchpad);
+  document.getElementById("pad-history-btn").addEventListener("click", openPadHistory);
+}
+
+function setPadStatus(text, kind="") {
+  const el = document.getElementById("pad-status");
+  if (!el) return;
+  el.textContent = text;
+  el.className = "pad-status" + (kind ? " " + kind : "");
 }
 
 async function saveScratchpad() {
   const ta = document.getElementById("pad-content");
   if (!ta) return;
+  if (_padAutoTimer) { clearTimeout(_padAutoTimer); _padAutoTimer = null; }
   const content = ta.value;
+  if (content === scratchpad.content) {
+    setPadStatus("已保存", "ok");
+    return;
+  }
+  setPadStatus("保存中…");
   try {
     const r = JSON.parse(await window.pywebview.api.save_scratchpad(content));
     if (r.status === "ok") {
       scratchpad.content = content;
       scratchpad.updated_at = r.updated_at;
       scratchpadDirty = false;
-      const btn = document.getElementById("pad-save-btn");
-      const old = btn.textContent;
-      btn.textContent = "已保存 ✓";
-      btn.disabled = true;
+      setPadStatus("已保存 ✓", "ok");
       const meta = document.getElementById("pad-meta");
       if (meta) meta.textContent = "上次保存于 " + r.updated_at.slice(0,16).replace("T"," ");
-      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 800);
     } else {
-      alert("保存失败：" + (r.message || ""));
+      setPadStatus("保存失败", "err");
     }
-  } catch (e) { alert("错误：" + e); }
+  } catch (e) { setPadStatus("保存失败", "err"); }
+}
+
+async function openPadHistory() {
+  if (!window.pywebview || !window.pywebview.api) return;
+  let history = [];
+  try {
+    const r = JSON.parse(await window.pywebview.api.get_scratchpad_history());
+    history = r.history || [];
+  } catch (e) {}
+
+  const overlay = document.createElement("div");
+  overlay.className = "pad-hist-overlay";
+  let body;
+  if (!history.length) {
+    body = `<div class="pad-hist-empty">还没有历史版本。每次内容变更后会自动留底。</div>`;
+  } else {
+    body = `<ul class="pad-hist-list">` + history.map((h, i) => {
+      const ts = (h.ts || "").slice(0, 16).replace("T", " ");
+      const preview = (h.content || "").slice(0, 200).replace(/\s+/g, " ");
+      const more = (h.content || "").length > 200 ? "…" : "";
+      return `<li class="pad-hist-item" data-idx="${i}">
+        <div class="pad-hist-ts">${escapeHTML(ts)}</div>
+        <div class="pad-hist-preview">${escapeHTML(preview)}${more}</div>
+        <div class="pad-hist-actions">
+          <button class="bar-link" data-action="restore">恢复</button>
+          <button class="bar-link" data-action="insert">追加到末尾</button>
+        </div>
+      </li>`;
+    }).join("") + `</ul>`;
+  }
+  overlay.innerHTML = `
+    <div class="pad-hist-bg"></div>
+    <div class="pad-hist-card">
+      <div class="pad-hist-head">
+        <div class="pad-hist-title">历史版本 · ${history.length} 条（最近 100 个）</div>
+        <button class="tl-close" data-close>×</button>
+      </div>
+      <div class="pad-hist-body">${body}</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  function close() { overlay.remove(); }
+  overlay.querySelector(".pad-hist-bg").addEventListener("click", close);
+  overlay.querySelector("[data-close]").addEventListener("click", close);
+  document.addEventListener("keydown", function esc(e) {
+    if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); }
+  });
+
+  overlay.querySelectorAll(".pad-hist-item").forEach(li => {
+    const idx = +li.dataset.idx;
+    const item = history[idx];
+    li.querySelectorAll("[data-action]").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const ta = document.getElementById("pad-content");
+        if (!ta) return;
+        if (action === "restore") {
+          if (!confirm("用这一版替换当前内容？当前内容也会自动留底。")) return;
+          ta.value = item.content || "";
+          await saveScratchpad();
+        } else if (action === "insert") {
+          const sep = ta.value && !ta.value.endsWith("\n") ? "\n\n" : "";
+          ta.value = ta.value + sep + (item.content || "");
+          await saveScratchpad();
+        }
+        close();
+        ta.focus();
+      });
+    });
+  });
 }
 
 async function addCustomFlow(dimId) {

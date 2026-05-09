@@ -1156,3 +1156,41 @@ button { font-family: inherit; cursor: pointer; }
   outline: none; resize: none;
 }
 .pad-textarea::placeholder { color: var(--color-text-tertiary); }
+.pad-actions { display: flex; gap: 10px; align-items: center; }
+.pad-status {
+  font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px;
+  min-width: 60px; text-align: right; transition: color .2s;
+}
+.pad-status.ok  { color: #8ad08f; }
+.pad-status.err { color: #ff8a8a; }
+
+/* 历史版本 modal */
+.pad-hist-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn .15s;
+}
+.pad-hist-bg { position: absolute; inset: 0; background: rgba(0,0,0,0.78); backdrop-filter: blur(6px); }
+.pad-hist-card {
+  position: relative; width: 600px; max-width: 92vw; max-height: 80vh;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column;
+  animation: cardIn .25s cubic-bezier(.2,.8,.3,1);
+}
+.pad-hist-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 0.5px solid var(--color-border-tertiary); }
+.pad-hist-title { font-size: 14px; font-weight: 600; letter-spacing: 0.4px; }
+.pad-hist-body { padding: 12px 18px 16px; overflow-y: auto; flex: 1; }
+.pad-hist-empty { font-size: 12.5px; color: var(--color-text-tertiary); text-align: center; padding: 28px 0; }
+.pad-hist-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.pad-hist-item {
+  padding: 10px 12px;
+  background: var(--color-background-tertiary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+}
+.pad-hist-ts { font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px; margin-bottom: 4px; }
+.pad-hist-preview { font-size: 12.5px; color: var(--color-text-primary); line-height: 1.5; max-height: 60px; overflow: hidden; }
+.pad-hist-actions { display: flex; gap: 6px; margin-top: 8px; }
