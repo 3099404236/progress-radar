@@ -999,3 +999,131 @@ button { font-family: inherit; cursor: pointer; }
 .today-summary { font-size: 13px; color: var(--color-text-primary); line-height: 1.5; margin-top: 2px; }
 .today-kp { margin: 4px 0 0 16px; padding: 0; font-size: 11.5px; color: var(--color-text-secondary); line-height: 1.5; }
 .today-kp li { list-style: disc; }
+
+/* ---------- 宝箱开箱动画 ---------- */
+.chest-overlay {
+  position: fixed; inset: 0; z-index: 99999;
+  background: radial-gradient(ellipse at center, rgba(20,24,32,0.96) 0%, rgba(0,0,0,0.99) 100%);
+  backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn .25s;
+}
+.chest-stage {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 18px;
+  padding: 28px;
+  max-width: 90vw;
+  --chest-glow: rgba(140, 160, 180, 0.5);
+  --chest-aura: #aab1bc;
+}
+.chest-stage.rarity-common    { --chest-glow: rgba(140,160,180,0.55); --chest-aura: #c0c8d2; }
+.chest-stage.rarity-uncommon  { --chest-glow: rgba(138,208,143,0.65); --chest-aura: #8ad08f; }
+.chest-stage.rarity-rare      { --chest-glow: rgba(108,177,245,0.7);  --chest-aura: #6cb1f5; }
+.chest-stage.rarity-epic      { --chest-glow: rgba(216,160,232,0.75); --chest-aura: #d8a0e8; }
+.chest-stage.rarity-legendary { --chest-glow: rgba(255,216,122,0.85); --chest-aura: #ffd87a; }
+
+.chest-counter { font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 1.5px; text-transform: uppercase; }
+
+.chest-area {
+  position: relative; width: 240px; height: 240px;
+  display: flex; align-items: center; justify-content: center;
+}
+.chest-img {
+  width: 220px; height: 220px; object-fit: contain;
+  cursor: pointer; transition: transform .2s, filter .2s;
+  filter: drop-shadow(0 0 26px var(--chest-glow));
+  user-select: none;
+}
+.chest-img:hover { transform: scale(1.06); filter: drop-shadow(0 0 38px var(--chest-glow)); }
+.chest-img.shaking { animation: chest-shake .35s infinite; cursor: default; pointer-events: none; }
+@keyframes chest-shake {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-5deg) translateY(-2px); }
+  75% { transform: rotate(5deg) translateY(2px); }
+}
+.chest-img.exploding { animation: chest-explode .6s forwards; }
+@keyframes chest-explode {
+  0%   { transform: scale(1); filter: brightness(1) drop-shadow(0 0 26px var(--chest-glow)); }
+  35%  { transform: scale(1.35); filter: brightness(2.5) drop-shadow(0 0 80px white); }
+  100% { transform: scale(0); filter: brightness(5); opacity: 0; }
+}
+
+/* 旋转光环 */
+.chest-aura {
+  position: absolute; inset: -10px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+}
+.chest-aura.active {
+  opacity: 1;
+  background: conic-gradient(from 0deg,
+    transparent 0deg,
+    var(--chest-aura) 60deg,
+    transparent 120deg,
+    transparent 240deg,
+    var(--chest-aura) 300deg,
+    transparent 360deg);
+  filter: blur(8px);
+  animation: aura-spin .9s linear infinite;
+}
+@keyframes aura-spin { to { transform: rotate(360deg); } }
+.chest-aura.burst { animation: aura-burst .55s forwards; }
+@keyframes aura-burst {
+  to { transform: scale(2.6); opacity: 0; filter: blur(20px); }
+}
+
+.chest-hint {
+  font-size: 13px; color: var(--color-text-secondary);
+  letter-spacing: 2px;
+  animation: hint-pulse 1.6s ease-in-out infinite;
+}
+@keyframes hint-pulse {
+  0%, 100% { opacity: 0.5; transform: translateY(0); }
+  50%      { opacity: 1;   transform: translateY(-2px); }
+}
+
+/* 卡面 reveal */
+.chest-card-wrap { animation: card-fly .6s cubic-bezier(.2,.8,.3,1); }
+@keyframes card-fly {
+  0%   { opacity: 0; transform: translateY(60px) scale(.4) rotateX(35deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotateX(0); }
+}
+.reveal-card {
+  width: 280px;
+  background: linear-gradient(135deg, #15171c 0%, #0a0c10 100%);
+  border: 1.5px solid var(--chest-aura);
+  border-radius: 14px;
+  overflow: hidden;
+  text-align: center;
+  box-shadow: 0 0 60px var(--chest-glow), 0 12px 36px rgba(0,0,0,0.6);
+}
+.reveal-img {
+  width: 100%; aspect-ratio: 1;
+  object-fit: cover; display: block;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.reveal-img-placeholder {
+  background: linear-gradient(135deg, #1a1d24 0%, #0c0e12 100%);
+}
+.reveal-tags { display: flex; gap: 6px; justify-content: center; margin: 14px 0 6px; }
+.reveal-tag, .reveal-rar { font-size: 10px; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.5px; }
+.reveal-tag { background: rgba(255,255,255,0.06); color: var(--color-text-tertiary); }
+.reveal-rar { background: rgba(255,255,255,0.04); color: var(--chest-aura); font-weight: 600; }
+.reveal-title {
+  font-size: 22px; font-weight: 700; letter-spacing: 1.5px;
+  margin: 4px 18px 8px;
+  color: var(--color-text-primary);
+}
+.reveal-card.legendary .reveal-title {
+  background: linear-gradient(135deg, #ffd87a 0%, #fff2c0 50%, #ffd87a 100%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.reveal-card.epic .reveal-title { color: #ecc5f5; }
+.reveal-desc {
+  font-size: 12.5px; line-height: 1.55; color: var(--color-text-secondary);
+  margin: 0 18px 16px;
+}
+
+.chest-actions { display: flex; gap: 10px; margin-top: 6px; }
+.chest-actions .btn { font-size: 13px; padding: 8px 18px; }

@@ -26,7 +26,8 @@ _submit_lock = threading.RLock()
 
 def _notify_after(fn):
     """装饰器：方法跑完后通知 dashboard 立即重 load
-    用 evaluate_js 跨窗口发 'progress-changed' 事件，dashboard.js 监听刷新。"""
+    用 evaluate_js 跨窗口发 'progress-changed' 事件，dashboard.js 监听刷新。
+    如果返回的 JSON 含 unlocked / insight，再派 'chest-show' 事件触发开箱动画。"""
     @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
         result = fn(self, *args, **kwargs)
@@ -35,10 +36,71 @@ def _notify_after(fn):
                 self._main_window.evaluate_js(
                     "window.dispatchEvent(new Event('progress-changed'));"
                 )
+                # 解析返回值收集解锁项目
+                try:
+                    parsed = json.loads(result) if isinstance(result, str) else result
+                    chest_items = _collect_chest_items(parsed)
+                    if chest_items:
+                        items_js = json.dumps(chest_items, ensure_ascii=False)
+                        self._main_window.evaluate_js(
+                            f"window.dispatchEvent(new CustomEvent('chest-show', {{detail: {items_js}}}));"
+                        )
+                except Exception:
+                    pass
         except Exception:
             log.exception("notify dashboard 失败")
         return result
     return wrapper
+
+
+def _collect_chest_items(result):
+    """从 submit/replay 的返回里抽出"待开宝箱"列表 — milestone unlocked + insight"""
+    if not isinstance(result, dict):
+        return []
+    items = []
+    seen_titles = set()
+    for u in (result.get("unlocked") or []):
+        if not u.get("title"): continue
+        key = (u.get("scope", "dimension"), u["title"])
+        if key in seen_titles: continue
+        seen_titles.add(key)
+        items.append({
+            "title": u.get("title", ""),
+            "description": u.get("description", ""),
+            "rarity": u.get("rarity", "common"),
+            "scope": u.get("scope", "dimension"),
+            "image_id": u.get("image_id"),
+            "kind": "milestone",
+        })
+    ins = result.get("insight")
+    if isinstance(ins, dict) and ins.get("title"):
+        key = ("dimension", ins["title"])
+        if key not in seen_titles:
+            seen_titles.add(key)
+            items.append({
+                "title": ins.get("title", ""),
+                "description": ins.get("description", ""),
+                "rarity": ins.get("rarity", "uncommon"),
+                "scope": "dimension",
+                "image_id": ins.get("image_id"),
+                "kind": "insight",
+            })
+    # multi action：每个 sub 的 insight 也要收
+    for r in (result.get("results") or []):
+        ins = r.get("insight") if isinstance(r, dict) else None
+        if isinstance(ins, dict) and ins.get("title"):
+            key = ("dimension", ins["title"])
+            if key in seen_titles: continue
+            seen_titles.add(key)
+            items.append({
+                "title": ins["title"],
+                "description": ins.get("description", ""),
+                "rarity": ins.get("rarity", "uncommon"),
+                "scope": "dimension",
+                "image_id": ins.get("image_id"),
+                "kind": "insight",
+            })
+    return items
 
 
 def _heat_grid(entries, days=35):

@@ -1179,3 +1179,152 @@ setInterval(load, 30000);
 window.addEventListener("progress-changed", () => {
   if (window.pywebview && window.pywebview.api) load();
 });
+
+// 后端写操作触发解锁时派发 chest-show，弹开箱动画
+window.addEventListener("chest-show", (e) => {
+  const items = (e.detail || []);
+  if (items.length) openChestSequence(items);
+});
+
+// ---------- 宝箱开箱动画 ----------
+
+const _chestImgCache = {};
+async function fetchChestImage(rarity) {
+  const iid = `chest__${rarity}`;
+  if (_chestImgCache[iid]) return _chestImgCache[iid];
+  if (!window.pywebview || !window.pywebview.api) return "";
+  try {
+    const r = JSON.parse(await window.pywebview.api.get_card_image(iid));
+    if (r.ready && r.data_url) {
+      _chestImgCache[iid] = r.data_url;
+      return r.data_url;
+    }
+  } catch (_) {}
+  return "";
+}
+
+async function fetchCardURL(image_id) {
+  if (!image_id) return "";
+  if (imageCache[image_id]) return imageCache[image_id];
+  try {
+    const r = JSON.parse(await window.pywebview.api.get_card_image(image_id));
+    if (r.ready && r.data_url) {
+      imageCache[image_id] = r.data_url;
+      return r.data_url;
+    }
+  } catch (_) {}
+  return "";
+}
+
+function openChestSequence(items) {
+  if (!items || !items.length) return;
+  let idx = 0;
+
+  const overlay = document.createElement("div");
+  overlay.className = "chest-overlay";
+  overlay.innerHTML = `
+    <div class="chest-stage rarity-common">
+      <div class="chest-counter">1 / ${items.length}</div>
+      <div class="chest-area">
+        <div class="chest-aura"></div>
+        <img class="chest-img" alt="" />
+      </div>
+      <div class="chest-hint">点击开启</div>
+      <div class="chest-card-wrap"></div>
+      <div class="chest-actions">
+        <button class="btn btn-secondary chest-skip">跳过</button>
+        <button class="btn chest-next" style="display:none">下一个 →</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const stage = overlay.querySelector(".chest-stage");
+  const counter = overlay.querySelector(".chest-counter");
+  const chestArea = overlay.querySelector(".chest-area");
+  const chestImg = overlay.querySelector(".chest-img");
+  const aura = overlay.querySelector(".chest-aura");
+  const hint = overlay.querySelector(".chest-hint");
+  const cardWrap = overlay.querySelector(".chest-card-wrap");
+  const nextBtn = overlay.querySelector(".chest-next");
+  const skipBtn = overlay.querySelector(".chest-skip");
+
+  function close() { overlay.remove(); }
+
+  async function loadChest() {
+    const item = items[idx];
+    counter.textContent = `${idx + 1} / ${items.length}`;
+    stage.className = "chest-stage rarity-" + (item.rarity || "common");
+    chestArea.style.display = "flex";
+    chestImg.style.display = "block";
+    chestImg.classList.remove("shaking", "exploding");
+    aura.classList.remove("active", "burst");
+    aura.style.display = "block";
+    hint.style.display = "block";
+    hint.textContent = "点击开启";
+    cardWrap.innerHTML = "";
+    cardWrap.style.display = "none";
+    nextBtn.style.display = "none";
+    skipBtn.textContent = "跳过";
+
+    chestImg.src = await fetchChestImage(item.rarity || "common");
+    chestImg.onclick = () => openChest(item);
+  }
+
+  async function openChest(item) {
+    chestImg.onclick = null;
+    hint.style.display = "none";
+    chestImg.classList.add("shaking");
+    aura.classList.add("active");
+
+    // 提前加载卡面图
+    const cardUrl = await fetchCardURL(item.image_id);
+
+    setTimeout(() => {
+      chestImg.classList.remove("shaking");
+      chestImg.classList.add("exploding");
+      aura.classList.add("burst");
+      setTimeout(() => {
+        chestImg.style.display = "none";
+        aura.style.display = "none";
+        cardWrap.innerHTML = renderRevealCard(item, cardUrl);
+        cardWrap.style.display = "block";
+        nextBtn.style.display = "inline-block";
+        nextBtn.textContent = (idx >= items.length - 1) ? "完成" : `下一个 (${idx + 1}/${items.length})`;
+        skipBtn.textContent = "关闭";
+      }, 600);
+    }, 1500);
+  }
+
+  nextBtn.onclick = () => {
+    idx++;
+    if (idx >= items.length) { close(); }
+    else { loadChest(); }
+  };
+  skipBtn.onclick = close;
+  document.addEventListener("keydown", function esc(e) {
+    if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); }
+  });
+
+  loadChest();
+}
+
+function renderRevealCard(item, cardUrl) {
+  const rar = item.rarity || "common";
+  const rarMap = { common: "寻常", uncommon: "不凡", rare: "稀有", epic: "史诗", legendary: "传奇" };
+  const kindLabel = item.kind === "insight" ? "洞察" : (item.scope === "global" ? "全局" : "里程碑");
+  const img = cardUrl
+    ? `<img class="reveal-img" src="${cardUrl}" />`
+    : `<div class="reveal-img reveal-img-placeholder"></div>`;
+  return `
+    <div class="reveal-card ${rar}">
+      ${img}
+      <div class="reveal-tags">
+        <span class="reveal-tag">${escapeHTML(kindLabel)}</span>
+        <span class="reveal-rar">${rarMap[rar] || "寻常"}</span>
+      </div>
+      <div class="reveal-title">${escapeHTML(item.title || "")}</div>
+      <div class="reveal-desc">${escapeHTML(item.description || "")}</div>
+    </div>
+  `;
+}
