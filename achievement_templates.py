@@ -65,15 +65,16 @@ GLOBAL_MILESTONE_TEMPLATES = [
 
 # 中文稀有度标签
 # 竞技场天梯顺序 + 杯数门槛（杯数 = 总 entries 数，每写一条 +1 杯）
+# 排序按"用户达到该 milestone 时大致的杯数"由低到高，让#1 真的是最容易
 # 真实解锁条件仍由各 milestone 自身规则触发；门槛只决定排序与进度条
 ARENA_ORDER = [
-    {"id": "g_total_50",      "threshold": 50},
-    {"id": "g_new_continent", "threshold": 80},
-    {"id": "g_three_dims",    "threshold": 120},
-    {"id": "g_crossover",     "threshold": 200},
-    {"id": "g_first_evolve",  "threshold": 300},
-    {"id": "g_streak30",      "threshold": 500},
-    {"id": "g_total_200",     "threshold": 800},
+    {"id": "g_new_continent", "threshold": 20},   # 5 个维度，初期试错就能建够
+    {"id": "g_total_50",      "threshold": 50},   # 50 条记录
+    {"id": "g_three_dims",    "threshold": 100},  # 一周 3 个方向并进
+    {"id": "g_crossover",     "threshold": 180},  # 跨维度连接，看缘分
+    {"id": "g_total_200",     "threshold": 200},  # 200 条记录
+    {"id": "g_first_evolve",  "threshold": 350},  # 首次接受阶段演化
+    {"id": "g_streak30",      "threshold": 500},  # 30 天连续，最难
 ]
 
 
