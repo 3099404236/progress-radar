@@ -581,6 +581,7 @@ function render() {
   wireDragAndDrop();
   wireContextMenu();
   wireTimelineButtons();
+  wireArenaCard();
 
   const collapseBtn = app.querySelector("[data-collapse]");
   if (collapseBtn) collapseBtn.addEventListener("click", (e) => {
@@ -1114,15 +1115,15 @@ function arenaCardHTML(s) {
 function animateArenaProgress() {
   const el = document.querySelector(".arena-cups-num");
   if (!el) return;
-  const target = parseInt(el.dataset.target || "0", 10);
-  const from = parseInt(el.textContent, 10) || 0;
-  // 加载 arena 中央卡面图
+  // 加载 arena 中央卡面图（无论杯数有没有变都要做）
   const cardImg = document.querySelector(".arena-card-img[data-img-id]");
   if (cardImg) {
     const iid = cardImg.dataset.imgId;
-    if (imageCache[iid]) cardImg.src = imageCache[iid];
+    if (imageCache[iid]) { cardImg.src = imageCache[iid]; cardImg.classList.add("loaded"); }
     else fetchCardImage(iid, cardImg);
   }
+  const target = parseInt(el.dataset.target || "0", 10);
+  const from = parseInt(el.textContent, 10) || 0;
   if (from === target) { _lastArenaCups = target; return; }
   const start = performance.now();
   const dur = 900;
@@ -1134,10 +1135,11 @@ function animateArenaProgress() {
     else { el.textContent = target; _lastArenaCups = target; }
   };
   requestAnimationFrame(step);
+}
 
-  // 进度条 width 是 CSS transition 自动动画，无需手动
+function wireArenaCard() {
   const card = document.getElementById("arena-main-card");
-  if (card) card.addEventListener("click", openArenaModal, { once: true });
+  if (card) card.addEventListener("click", openArenaModal);
 }
 
 function openArenaModal() {
