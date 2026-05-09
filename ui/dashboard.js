@@ -1176,7 +1176,7 @@ async function openPadHistory() {
     <div class="pad-hist-bg"></div>
     <div class="pad-hist-card">
       <div class="pad-hist-head">
-        <div class="pad-hist-title">历史版本 · ${history.length} 条（最近 100 个）</div>
+        <div class="pad-hist-title">历史版本 · 共 ${history.length} 条（按时间倒序）</div>
         <button class="tl-close" data-close>×</button>
       </div>
       <div class="pad-hist-body">${body}</div>

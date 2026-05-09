@@ -12,8 +12,6 @@ META_FILE = os.path.join(config.DATA_DIR, "scratchpad.meta.json")
 HIST_FILE = os.path.join(config.DATA_DIR, "scratchpad.history.json")
 _lock = threading.Lock()
 
-HIST_MAX = 100
-
 
 def load():
     """返回 {content, updated_at}"""
@@ -43,8 +41,7 @@ def _read_history():
 
 
 def _write_history(history):
-    if len(history) > HIST_MAX:
-        history = history[-HIST_MAX:]
+    """全量保留，不做任何裁剪 — 用户希望历史永不丢失"""
     os.makedirs(os.path.dirname(HIST_FILE), exist_ok=True)
     tmp = HIST_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
