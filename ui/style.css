@@ -1130,77 +1130,29 @@ button { font-family: inherit; cursor: pointer; }
 .chest-actions { display: flex; gap: 10px; margin-top: 6px; }
 .chest-actions .btn { font-size: 13px; padding: 8px 18px; }
 
-/* ---------- 记事本视图 ---------- */
-.notes-shell {
-  display: grid; grid-template-columns: 280px 1fr; gap: 16px;
-  height: calc(100vh - 84px - 48px);  /* 减 header + dash-body padding */
-  min-height: 500px;
-}
-.notes-list {
+/* ---------- 临时记事本（单 textarea） ---------- */
+.pad-shell {
+  display: flex; flex-direction: column; gap: 10px;
+  height: calc(100vh - 84px - 48px);
+  min-height: 480px;
   background: var(--color-background-secondary);
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--border-radius-lg);
-  display: flex; flex-direction: column;
-  overflow: hidden;
+  padding: 14px 16px 14px;
 }
-.notes-list-head {
+.pad-head {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 14px;
-  border-bottom: 0.5px solid var(--color-border-tertiary);
-}
-.notes-list-title { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; }
-.notes-list-body { flex: 1; overflow-y: auto; }
-.notes-empty { padding: 24px 18px; font-size: 12.5px; color: var(--color-text-tertiary); text-align: center; }
-.note-item {
-  padding: 10px 14px;
-  border-bottom: 0.5px solid var(--color-border-tertiary);
-  cursor: pointer;
-  transition: background .12s, border-color .12s;
-}
-.note-item:hover { background: var(--color-background-tertiary); }
-.note-item.active {
-  background: var(--color-background-tertiary);
-  box-shadow: inset 2px 0 0 var(--color-accent);
-}
-.note-item-title { font-size: 13px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.note-item-preview { font-size: 11.5px; color: var(--color-text-secondary); line-height: 1.4; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.note-item-time { font-size: 10px; color: var(--color-text-tertiary); letter-spacing: 0.4px; }
-
-.notes-edit {
-  background: var(--color-background-secondary);
-  border: 0.5px solid var(--color-border-tertiary);
-  border-radius: var(--border-radius-lg);
-  display: flex; flex-direction: column;
-  padding: 14px 16px 12px;
-}
-.notes-edit-head {
-  display: flex; gap: 10px; align-items: center;
   padding-bottom: 10px;
   border-bottom: 0.5px solid var(--color-border-tertiary);
 }
-.notes-title-input {
-  flex: 1;
-  background: transparent; border: 0;
-  font-family: inherit; font-size: 18px; font-weight: 600;
-  color: var(--color-text-primary);
-  padding: 6px 0;
-  outline: none; letter-spacing: 0.4px;
-}
-.notes-title-input::placeholder { color: var(--color-text-tertiary); font-weight: 400; }
-.notes-edit-actions { display: flex; gap: 8px; }
-.notes-content-input {
+.pad-meta { font-size: 11.5px; color: var(--color-text-tertiary); letter-spacing: 0.4px; }
+.pad-textarea {
   flex: 1;
   background: transparent;
   border: 0;
-  font-family: inherit; font-size: 13.5px; line-height: 1.7;
+  font-family: inherit; font-size: 14px; line-height: 1.75;
   color: var(--color-text-primary);
-  padding: 14px 0 8px;
-  outline: none;
-  resize: none;
+  padding: 6px 0;
+  outline: none; resize: none;
 }
-.notes-content-input::placeholder { color: var(--color-text-tertiary); }
-.notes-meta { font-size: 10.5px; color: var(--color-text-tertiary); padding-top: 6px; border-top: 0.5px solid var(--color-border-tertiary); letter-spacing: 0.4px; }
-
-@media (max-width: 720px) {
-  .notes-shell { grid-template-columns: 1fr; height: auto; }
-}
+.pad-textarea::placeholder { color: var(--color-text-tertiary); }

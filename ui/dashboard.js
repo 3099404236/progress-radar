@@ -11,8 +11,8 @@ let weeklyText = null;
 let globalAchievements = null;
 let currentView = "active"; // 'active' | 'honored' | 'ignored' | 'notes'
 let todayInfo = null;
-let notes = [];
-let notesEditing = null; // null=新笔记；string=正在编辑某条 id
+let scratchpad = { content: "", updated_at: null };
+let scratchpadDirty = false;
 
 function escapeHTML(s) {
   return (s || "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -462,11 +462,10 @@ function render() {
   const fmt = (n) => n;
   const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = fmt(v); };
   setText("cnt-active", cntA); setText("cnt-honored", cntH); setText("cnt-ignored", cntI);
-  setText("cnt-notes", notes.length);
 
-  // 记事本视图独立渲染
+  // 记事视图独立渲染
   if (currentView === "notes") {
-    renderNotes();
+    renderScratchpad();
     return;
   }
 
@@ -1064,124 +1063,65 @@ async function persistTrackLayout() {
   } catch (e) { console.warn("布局保存失败:", e); }
 }
 
-// ---------- 记事本视图 ----------
+// ---------- 临时记事本（单 textarea） ----------
 
-async function loadNotes() {
+async function loadScratchpad() {
   if (!window.pywebview || !window.pywebview.api) return;
   try {
-    const r = JSON.parse(await window.pywebview.api.list_notes());
-    notes = r.notes || [];
-  } catch (e) { notes = []; }
+    const r = JSON.parse(await window.pywebview.api.get_scratchpad());
+    scratchpad = { content: r.content || "", updated_at: r.updated_at || null };
+    scratchpadDirty = false;
+  } catch (e) { scratchpad = { content: "", updated_at: null }; }
 }
 
-function renderNotes() {
+function renderScratchpad() {
   const app = document.getElementById("app");
-  const editing = notesEditing ? notes.find(n => n.id === notesEditing) : null;
-  const titleVal = editing ? editing.title : "";
-  const contentVal = editing ? editing.content : "";
-
-  let listHTML = "";
-  if (!notes.length) {
-    listHTML = `<div class="notes-empty">还没有笔记，写点什么吧。</div>`;
-  } else {
-    listHTML = notes.map(n => {
-      const active = n.id === notesEditing ? " active" : "";
-      const preview = (n.content || "").slice(0, 60).replace(/\s+/g, " ");
-      const upd = (n.updated_at || "").slice(0, 16).replace("T", " ");
-      return `<div class="note-item${active}" data-note-id="${escapeHTML(n.id)}">
-        <div class="note-item-title">${escapeHTML(n.title || "（无标题）")}</div>
-        <div class="note-item-preview">${escapeHTML(preview)}</div>
-        <div class="note-item-time">${escapeHTML(upd)}</div>
-      </div>`;
-    }).join("");
-  }
-
+  const upd = scratchpad.updated_at
+    ? "上次保存于 " + scratchpad.updated_at.slice(0, 16).replace("T", " ")
+    : "尚未保存";
   app.innerHTML = `
-    <div class="notes-shell">
-      <aside class="notes-list">
-        <div class="notes-list-head">
-          <div class="notes-list-title">笔记 · ${notes.length}</div>
-          <button class="bar-link" id="note-new-btn">+ 新建</button>
-        </div>
-        <div class="notes-list-body">${listHTML}</div>
-      </aside>
-      <main class="notes-edit">
-        <div class="notes-edit-head">
-          <input id="note-title" class="notes-title-input" placeholder="标题（可选）" value="${escapeHTML(titleVal)}" />
-          <div class="notes-edit-actions">
-            ${editing ? `<button class="bar-link" id="note-del-btn">删除</button>` : ""}
-            <button class="btn" id="note-save-btn">保存（Ctrl+S）</button>
-          </div>
-        </div>
-        <textarea id="note-content" class="notes-content-input" placeholder="正文 — 支持任意纯文本。Ctrl+S 保存，Esc 取消编辑。">${escapeHTML(contentVal)}</textarea>
-        <div class="notes-meta">${editing ? "更新于 " + (editing.updated_at || "").slice(0,16).replace("T"," ") : "新笔记"}</div>
-      </main>
+    <div class="pad-shell">
+      <div class="pad-head">
+        <div class="pad-meta" id="pad-meta">${escapeHTML(upd)}</div>
+        <button class="btn" id="pad-save-btn">保存（Ctrl+S）</button>
+      </div>
+      <textarea id="pad-content" class="pad-textarea" placeholder="临时记一笔 · Ctrl+S 保存"></textarea>
     </div>
   `;
+  const ta = document.getElementById("pad-content");
+  ta.value = scratchpad.content || "";
+  ta.focus();
 
-  // 列表点击
-  app.querySelectorAll(".note-item").forEach(el => {
-    el.addEventListener("click", () => {
-      notesEditing = el.dataset.noteId;
-      renderNotes();
-      setTimeout(() => document.getElementById("note-content").focus(), 30);
-    });
-  });
-  // 新建
-  document.getElementById("note-new-btn").addEventListener("click", () => {
-    notesEditing = null;
-    renderNotes();
-    setTimeout(() => document.getElementById("note-title").focus(), 30);
-  });
-  // 保存
-  const saveBtn = document.getElementById("note-save-btn");
-  saveBtn.addEventListener("click", saveCurrentNote);
-  // 删除
-  const delBtn = document.getElementById("note-del-btn");
-  if (delBtn) delBtn.addEventListener("click", async () => {
-    if (!confirm("删除这条笔记？")) return;
-    await window.pywebview.api.delete_note(notesEditing);
-    notesEditing = null;
-    await loadNotes();
-    renderNotes();
-  });
-  // 快捷键
-  const ta = document.getElementById("note-content");
-  const ti = document.getElementById("note-title");
-  [ta, ti].forEach(el => el && el.addEventListener("keydown", (e) => {
+  ta.addEventListener("input", () => { scratchpadDirty = true; });
+  ta.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-      e.preventDefault(); saveCurrentNote();
+      e.preventDefault(); saveScratchpad();
     }
-    if (e.key === "Escape" && el === ta) {
-      notesEditing = null; renderNotes();
-    }
-  }));
+  });
+  document.getElementById("pad-save-btn").addEventListener("click", saveScratchpad);
 }
 
-async function saveCurrentNote() {
-  const title = (document.getElementById("note-title")?.value || "").trim();
-  const content = (document.getElementById("note-content")?.value || "").trim();
-  if (!title && !content) {
-    alert("笔记不能为空"); return;
-  }
+async function saveScratchpad() {
+  const ta = document.getElementById("pad-content");
+  if (!ta) return;
+  const content = ta.value;
   try {
-    const r = JSON.parse(await window.pywebview.api.save_note(notesEditing || "", title, content));
+    const r = JSON.parse(await window.pywebview.api.save_scratchpad(content));
     if (r.status === "ok") {
-      notesEditing = r.note.id;
-      const btn = document.getElementById("note-save-btn");
+      scratchpad.content = content;
+      scratchpad.updated_at = r.updated_at;
+      scratchpadDirty = false;
+      const btn = document.getElementById("pad-save-btn");
       const old = btn.textContent;
       btn.textContent = "已保存 ✓";
       btn.disabled = true;
-      await loadNotes();
-      // 不整体重渲染，避免光标跳；只更新左侧列表
-      renderNotes();
-      setTimeout(() => { const b = document.getElementById("note-save-btn"); if (b) { b.textContent = old; b.disabled = false; } }, 800);
+      const meta = document.getElementById("pad-meta");
+      if (meta) meta.textContent = "上次保存于 " + r.updated_at.slice(0,16).replace("T"," ");
+      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 800);
     } else {
       alert("保存失败：" + (r.message || ""));
     }
-  } catch (e) {
-    alert("错误：" + e);
-  }
+  } catch (e) { alert("错误：" + e); }
 }
 
 async function addCustomFlow(dimId) {
@@ -1218,7 +1158,7 @@ document.querySelectorAll("#dash-side .side-tab").forEach(btn => {
     currentView = btn.dataset.view;
     document.querySelectorAll("#dash-side .side-tab").forEach(b => b.classList.toggle("on", b === btn));
     selected = null;
-    if (currentView === "notes") await loadNotes();
+    if (currentView === "notes") await loadScratchpad();
     render();
     document.querySelector(".dash-body").scrollTop = 0;
   });

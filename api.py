@@ -743,32 +743,21 @@ class API:
             log.exception("export_raw 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
-    # ---------- 记事本 ----------
+    # ---------- 记事本（单个临时草稿） ----------
 
-    def list_notes(self):
+    def get_scratchpad(self):
         try:
-            notes = notes_store.list_all()
-            return json.dumps({"status": "ok", "notes": notes}, ensure_ascii=False)
+            return json.dumps({"status": "ok", **notes_store.load()}, ensure_ascii=False)
         except Exception as e:
-            log.exception("list_notes 失败")
+            log.exception("get_scratchpad 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
-    def save_note(self, note_id, title, content):
+    def save_scratchpad(self, content):
         try:
-            item = notes_store.upsert(note_id or "", title or "", content or "")
-            if item is None:
-                return json.dumps({"status": "error", "message": "笔记不能为空"}, ensure_ascii=False)
-            return json.dumps({"status": "ok", "note": item}, ensure_ascii=False)
+            meta = notes_store.save(content or "")
+            return json.dumps({"status": "ok", "updated_at": meta["updated_at"]}, ensure_ascii=False)
         except Exception as e:
-            log.exception("save_note 失败")
-            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
-
-    def delete_note(self, note_id):
-        try:
-            ok = notes_store.delete(note_id)
-            return json.dumps({"status": "ok", "deleted": ok}, ensure_ascii=False)
-        except Exception as e:
-            log.exception("delete_note 失败")
+            log.exception("save_scratchpad 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     # ---------- 今日活动列表 ----------
