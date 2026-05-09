@@ -743,6 +743,65 @@ class API:
             log.exception("export_raw 失败")
             return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
+    # ---------- 全局竞技场天梯 ----------
+
+    def get_arena_state(self):
+        """全局成就重组成"竞技场天梯"，按门槛递增。
+        cups = 总 entries 数；解锁状态仍按 milestone 自身规则判断。"""
+        try:
+            from achievement_templates import ARENA_ORDER
+            data = data_store.load()
+            ach = achievement_store.load(data)
+            cups = sum(len(d.get("entries", [])) for d in data.get("dimensions", {}).values())
+            ms_by_id = {m["id"]: m for m in ach.get("global", {}).get("milestones", [])}
+
+            arenas = []
+            highest_unlocked_idx = -1
+            for i, ao in enumerate(ARENA_ORDER):
+                slot = ms_by_id.get(ao["id"], {})
+                unlocked = bool(slot.get("unlocked_at"))
+                arenas.append({
+                    "id": ao["id"],
+                    "title": slot.get("title", ""),
+                    "description": slot.get("description", ""),
+                    "rarity": slot.get("rarity", "common"),
+                    "image_id": slot.get("image_id", ""),
+                    "threshold": ao["threshold"],
+                    "unlocked": unlocked,
+                    "unlocked_at": slot.get("unlocked_at"),
+                    "position": i + 1,
+                })
+                if unlocked:
+                    highest_unlocked_idx = i
+
+            # 当前所在 arena = 已解锁中位置最高的；下一届 = 比它高一阶
+            current_idx = highest_unlocked_idx
+            next_idx = current_idx + 1 if current_idx + 1 < len(arenas) else None
+
+            if next_idx is not None:
+                from_t = arenas[current_idx]["threshold"] if current_idx >= 0 else 0
+                to_t = arenas[next_idx]["threshold"]
+                span = max(1, to_t - from_t)
+                progress = max(0.0, min(1.0, (cups - from_t) / span))
+                cups_to_next = max(0, to_t - cups)
+            else:
+                progress = 1.0
+                cups_to_next = 0
+
+            return json.dumps({
+                "status": "ok",
+                "cups": cups,
+                "arenas": arenas,
+                "current_idx": current_idx,
+                "next_idx": next_idx,
+                "progress_to_next": progress,
+                "cups_to_next": cups_to_next,
+                "max_arena": len(arenas),
+            }, ensure_ascii=False)
+        except Exception as e:
+            log.exception("get_arena_state 失败")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
     # ---------- 记事本（单个临时草稿） ----------
 
     def get_scratchpad(self):

@@ -13,6 +13,10 @@ let currentView = "active"; // 'active' | 'honored' | 'ignored' | 'notes'
 let todayInfo = null;
 let scratchpad = { content: "", updated_at: null };
 let scratchpadDirty = false;
+let arenaState = null;
+let _lastArenaCups = 0;
+
+const TROPHY_SVG = '<svg viewBox="0 0 24 24" class="trophy" fill="currentColor"><path d="M5 3h14v3.5c0 3.04-2.46 5.5-5.5 5.5h-3C7.46 12 5 9.54 5 6.5V3zM2 5h2v2c0 1.66 1.34 3 3 3v2c-2.76 0-5-2.24-5-5V5zm18 0h2v2c0 2.76-2.24 5-5 5v-2c1.66 0 3-1.34 3-3V5zM10 13h4v3h2v2H8v-2h2v-3z"/></svg>';
 
 function escapeHTML(s) {
   return (s || "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -544,8 +548,9 @@ function render() {
     if (d && (d.state || "active") === currentView) h += renderDetailPanel(d);
   }
 
-  if (globalAchievements && (globalAchievements.milestone_total || 0) > 0) {
-    h += achievementsBlock(globalAchievements, "__global__", true);
+  // 全局成就重组成竞技场卡片
+  if (arenaState) {
+    h += arenaCardHTML(arenaState);
   }
 
   app.innerHTML = h;
@@ -1063,6 +1068,151 @@ async function persistTrackLayout() {
   } catch (e) { console.warn("布局保存失败:", e); }
 }
 
+// ---------- 全局竞技场天梯 ----------
+
+function arenaCardHTML(s) {
+  if (!s) return "";
+  const cups = s.cups || 0;
+  const cur = (s.current_idx >= 0 && s.arenas) ? s.arenas[s.current_idx] : null;
+  const next = (s.next_idx !== null && s.next_idx !== undefined) ? s.arenas[s.next_idx] : null;
+  const pct = Math.round((s.progress_to_next || 0) * 100);
+  const curRar = cur ? (cur.rarity || "common") : "common";
+
+  const headLeft = `${TROPHY_SVG}
+    <span class="arena-cups-num" data-target="${cups}">${_lastArenaCups || cups}</span>
+    <span class="arena-cups-label">杯</span>`;
+  const headRight = cur
+    ? `<span class="arena-cur-pos">第 ${cur.position} 届</span><span class="arena-cur-title">${escapeHTML(cur.title)}</span>`
+    : `<span class="arena-cur-title">尚未踏入第一届</span>`;
+
+  let centerHTML;
+  if (cur && cur.image_id) {
+    centerHTML = `<img class="arena-card-img" data-img-id="${escapeHTML(cur.image_id)}" alt="${escapeHTML(cur.title)}" />`;
+  } else {
+    centerHTML = `<div class="arena-card-placeholder">${escapeHTML(cur ? cur.title : "尚未达到")}</div>`;
+  }
+
+  return `
+    <div class="arena-card rarity-${curRar}" id="arena-main-card" title="点击查看全部 ${s.max_arena || 7} 届">
+      <div class="arena-card-head">
+        <div class="arena-cups">${headLeft}</div>
+        <div class="arena-cur">${headRight}</div>
+      </div>
+      <div class="arena-card-img-wrap">${centerHTML}</div>
+      <div class="arena-card-foot">
+        <div class="arena-bar"><div class="arena-fill" style="width:${pct}%"></div></div>
+        <div class="arena-target">
+          ${next
+            ? `下一届：<b>${escapeHTML(next.title)}</b> · 还差 ${s.cups_to_next} 杯（门槛 ${next.threshold}）`
+            : `已是最高竞技场`}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function animateArenaProgress() {
+  const el = document.querySelector(".arena-cups-num");
+  if (!el) return;
+  const target = parseInt(el.dataset.target || "0", 10);
+  const from = parseInt(el.textContent, 10) || 0;
+  // 加载 arena 中央卡面图
+  const cardImg = document.querySelector(".arena-card-img[data-img-id]");
+  if (cardImg) {
+    const iid = cardImg.dataset.imgId;
+    if (imageCache[iid]) cardImg.src = imageCache[iid];
+    else fetchCardImage(iid, cardImg);
+  }
+  if (from === target) { _lastArenaCups = target; return; }
+  const start = performance.now();
+  const dur = 900;
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(from + (target - from) * eased);
+    if (t < 1) requestAnimationFrame(step);
+    else { el.textContent = target; _lastArenaCups = target; }
+  };
+  requestAnimationFrame(step);
+
+  // 进度条 width 是 CSS transition 自动动画，无需手动
+  const card = document.getElementById("arena-main-card");
+  if (card) card.addEventListener("click", openArenaModal, { once: true });
+}
+
+function openArenaModal() {
+  if (!arenaState) return;
+  const overlay = document.createElement("div");
+  overlay.className = "arena-modal";
+
+  const arenas = arenaState.arenas || [];
+  let body = `<div class="arena-ladder">`;
+  for (const a of arenas) {
+    const isCur = (a.position - 1) === arenaState.current_idx;
+    const isNext = (a.position - 1) === arenaState.next_idx;
+    let cls;
+    if (a.unlocked) cls = "ok" + (isCur ? " current" : "");
+    else if (isNext) cls = "next";
+    else cls = "locked";
+    const rar = a.rarity || "common";
+
+    let imgHTML;
+    if (a.unlocked && a.image_id) {
+      imgHTML = `<img class="arena-item-img" data-img-id="${escapeHTML(a.image_id)}" />`;
+    } else {
+      imgHTML = `<div class="arena-item-locked-img">${a.position}</div>`;
+    }
+
+    body += `<div class="arena-item ${cls} rarity-${rar}">
+      <div class="arena-item-pos">#${a.position}</div>
+      <div class="arena-item-img-wrap">${imgHTML}</div>
+      <div class="arena-item-meat">
+        <div class="arena-item-title-row">
+          <span class="arena-item-title">${escapeHTML(a.title || "（未解锁）")}</span>
+          <span class="arena-item-rar">${escapeHTML(rarityLabel[rar] || "寻常")}</span>
+        </div>
+        <div class="arena-item-desc">${escapeHTML(a.description || "")}</div>
+        <div class="arena-item-meta">
+          ${a.unlocked
+            ? `<span class="arena-item-unlocked">已解锁 · ${escapeHTML(a.unlocked_at || "")}</span>`
+            : `<span class="arena-item-cond">门槛 ${a.threshold} 杯${isNext ? `（还差 ${arenaState.cups_to_next} 杯）` : ""}</span>`}
+        </div>
+      </div>
+    </div>`;
+  }
+  body += `</div>`;
+
+  overlay.innerHTML = `
+    <div class="card-modal-bg"></div>
+    <div class="arena-modal-card">
+      <div class="arena-modal-head">
+        <div>
+          <div class="arena-modal-title">竞技场天梯</div>
+          <div class="arena-modal-sub">
+            ${TROPHY_SVG}<span class="arena-modal-cups">${arenaState.cups}</span> 杯 ·
+            已征服 ${arenas.filter(a => a.unlocked).length} / ${arenas.length} 届
+          </div>
+        </div>
+        <button class="tl-close" data-close>×</button>
+      </div>
+      <div class="arena-modal-body">${body}</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector(".card-modal-bg").addEventListener("click", () => overlay.remove());
+  overlay.querySelector("[data-close]").addEventListener("click", () => overlay.remove());
+  document.addEventListener("keydown", function esc(e) {
+    if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", esc); }
+  });
+  // 加载图
+  overlay.querySelectorAll("img[data-img-id]").forEach(img => {
+    const iid = img.dataset.imgId;
+    if (imageCache[iid]) img.src = imageCache[iid];
+    else fetchCardImage(iid, img);
+  });
+}
+
+
 // ---------- 临时记事本（单 textarea + 自动保存 + 历史） ----------
 
 let _padAutoTimer = null;
@@ -1238,7 +1388,13 @@ async function load() {
     dims = j.dimensions || [];
     globalAchievements = j.global_achievements || null;
     todayInfo = j.today || null;
+    // 同时拉 arena
+    try {
+      arenaState = JSON.parse(await window.pywebview.api.get_arena_state());
+    } catch (_) { arenaState = null; }
     render();
+    // 渲染完后启动数字滚动 + 进度条动画
+    requestAnimationFrame(animateArenaProgress);
   } catch (e) {
     document.getElementById("app").innerHTML = `<div class="empty">加载失败：${escapeHTML(String(e))}</div>`;
   }

@@ -64,6 +64,19 @@ GLOBAL_MILESTONE_TEMPLATES = [
 
 
 # 中文稀有度标签
+# 竞技场天梯顺序 + 杯数门槛（杯数 = 总 entries 数，每写一条 +1 杯）
+# 真实解锁条件仍由各 milestone 自身规则触发；门槛只决定排序与进度条
+ARENA_ORDER = [
+    {"id": "g_total_50",      "threshold": 50},
+    {"id": "g_new_continent", "threshold": 80},
+    {"id": "g_three_dims",    "threshold": 120},
+    {"id": "g_crossover",     "threshold": 200},
+    {"id": "g_first_evolve",  "threshold": 300},
+    {"id": "g_streak30",      "threshold": 500},
+    {"id": "g_total_200",     "threshold": 800},
+]
+
+
 RARITY_LABEL = {
     "common":    "寻常",
     "uncommon":  "不凡",
