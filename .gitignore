@@ -9,6 +9,7 @@ secrets.local.py
 data/progress.json
 data/achievements.json
 data/raw_submissions.jsonl
+data/notes.json
 data/app.log*
 data/weekly/
 data/achievement_images/
