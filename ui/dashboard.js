@@ -1150,10 +1150,13 @@ function openArenaModal() {
   overlay.className = "arena-modal";
 
   const arenas = arenaState.arenas || [];
-  // 列表倒序展示：高难度（高门槛）在上，容易的在下，模拟天梯爬升视觉
-  const arenasDesc = arenas.slice().reverse();
+  // 两段排序：上面是未解锁（待挑战），下面是已解锁（已征服）
+  // 各组内都是 threshold DESC（难的在上）
+  const locked   = arenas.filter(a => !a.unlocked).slice().reverse();
+  const unlocked = arenas.filter(a =>  a.unlocked).slice().reverse();
+  const ordered  = [...locked, ...unlocked];
   let body = `<div class="arena-ladder">`;
-  for (const a of arenasDesc) {
+  for (const a of ordered) {
     const isCur = (a.position - 1) === arenaState.current_idx;
     const isNext = (a.position - 1) === arenaState.next_idx;
     let cls;
@@ -1210,11 +1213,15 @@ function openArenaModal() {
   document.addEventListener("keydown", function esc(e) {
     if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", esc); }
   });
-  // 加载图
+  // 加载图（命中 cache 也要加 loaded 触发 fade-in）
   overlay.querySelectorAll("img[data-img-id]").forEach(img => {
     const iid = img.dataset.imgId;
-    if (imageCache[iid]) img.src = imageCache[iid];
-    else fetchCardImage(iid, img);
+    if (imageCache[iid]) {
+      img.src = imageCache[iid];
+      img.classList.add("loaded");
+    } else {
+      fetchCardImage(iid, img);
+    }
   });
 }
 
