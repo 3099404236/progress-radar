@@ -1085,8 +1085,8 @@ function arenaCardHTML(s) {
     <span class="arena-cups-num" data-target="${cups}">${_lastArenaCups || cups}</span>
     <span class="arena-cups-label">杯</span>`;
   const headRight = cur
-    ? `<span class="arena-cur-pos">第 ${cur.position} 届</span><span class="arena-cur-title">${escapeHTML(cur.title)}</span>`
-    : `<span class="arena-cur-title">尚未踏入第一届</span>`;
+    ? `<span class="arena-cur-pos">第 ${cur.position} 阶</span><span class="arena-cur-title">${escapeHTML(cur.title)}</span>`
+    : `<span class="arena-cur-title">尚未踏上第一阶</span>`;
 
   let centerHTML;
   if (cur && cur.image_id) {
@@ -1096,7 +1096,7 @@ function arenaCardHTML(s) {
   }
 
   return `
-    <div class="arena-card rarity-${curRar}" id="arena-main-card" title="点击查看全部 ${s.max_arena || 7} 届">
+    <div class="arena-card rarity-${curRar}" id="arena-main-card" title="点击查看凌云阶全 ${s.max_arena || 7} 阶">
       <div class="arena-card-head">
         <div class="arena-cups">${headLeft}</div>
         <div class="arena-cur">${headRight}</div>
@@ -1106,8 +1106,8 @@ function arenaCardHTML(s) {
         <div class="arena-bar"><div class="arena-fill" style="width:${pct}%"></div></div>
         <div class="arena-target">
           ${next
-            ? `下一届：<b>${escapeHTML(next.title)}</b> · 还差 ${s.cups_to_next} 杯（门槛 ${next.threshold}）`
-            : `已是最高竞技场`}
+            ? `下一阶：<b>${escapeHTML(next.title)}</b> · 还差 ${s.cups_to_next} 杯（门槛 ${next.threshold}）`
+            : `已登顶凌云阶`}
         </div>
       </div>
     </div>
@@ -1196,10 +1196,10 @@ function openArenaModal() {
     <div class="arena-modal-card">
       <div class="arena-modal-head">
         <div>
-          <div class="arena-modal-title">竞技场天梯</div>
+          <div class="arena-modal-title">凌云阶</div>
           <div class="arena-modal-sub">
             ${TROPHY_SVG}<span class="arena-modal-cups">${arenaState.cups}</span> 杯 ·
-            已征服 ${arenas.filter(a => a.unlocked).length} / ${arenas.length} 届
+            已登 ${arenas.filter(a => a.unlocked).length} / ${arenas.length} 阶
           </div>
         </div>
         <button class="tl-close" data-close>×</button>
