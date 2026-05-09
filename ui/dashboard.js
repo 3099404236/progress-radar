@@ -478,6 +478,11 @@ function render() {
   // 按当前视图过滤
   const visible = dims.filter(d => (d.state || "active") === currentView);
 
+  // 全局竞技场卡片：放在分布行下、维度三栏上（仅 active 视图）
+  if (currentView === "active" && arenaState) {
+    h += arenaCardHTML(arenaState);
+  }
+
   if (!dims.length) {
     h += `<div class="empty">还没有任何维度。点击右上角 <b>+ 粘贴</b> 添加第一条。</div>`;
   } else if (currentView === "active") {
@@ -548,10 +553,7 @@ function render() {
     if (d && (d.state || "active") === currentView) h += renderDetailPanel(d);
   }
 
-  // 全局成就重组成竞技场卡片
-  if (arenaState) {
-    h += arenaCardHTML(arenaState);
-  }
+  // (arena 卡片已挪到顶部分布以下，此处不再显示)
 
   app.innerHTML = h;
 
@@ -1148,8 +1150,10 @@ function openArenaModal() {
   overlay.className = "arena-modal";
 
   const arenas = arenaState.arenas || [];
+  // 列表倒序展示：高难度（高门槛）在上，容易的在下，模拟天梯爬升视觉
+  const arenasDesc = arenas.slice().reverse();
   let body = `<div class="arena-ladder">`;
-  for (const a of arenas) {
+  for (const a of arenasDesc) {
     const isCur = (a.position - 1) === arenaState.current_idx;
     const isNext = (a.position - 1) === arenaState.next_idx;
     let cls;
