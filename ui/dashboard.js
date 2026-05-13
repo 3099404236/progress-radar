@@ -588,6 +588,19 @@ function render() {
   wireTimelineButtons();
   wireArenaCard();
 
+  // 全局轮询：任何 :not(.loaded) 的 img 都会被 6 秒回查一次
+  // 之前只在维度详情视图启动，导致主页 arena 卡片中央图等不到刷新
+  app.querySelectorAll("img[data-img-id]").forEach(img => {
+    const iid = img.dataset.imgId;
+    if (imageCache[iid]) {
+      img.src = imageCache[iid];
+      img.classList.add("loaded");
+    } else {
+      fetchCardImage(iid, img);
+    }
+  });
+  ensureImagePolling();
+
   const collapseBtn = app.querySelector("[data-collapse]");
   if (collapseBtn) collapseBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1154,26 +1167,8 @@ function animateArenaProgress() {
 function wireArenaCard() {
   const card = document.getElementById("arena-main-card");
   if (!card) return;
-  // 中央卡面图区域单独点 → 大图 modal（带重新生成）；其他区域 → 天梯 modal
-  const imgWrap = card.querySelector(".arena-card-img-wrap");
-  if (imgWrap && arenaState && arenaState.current_idx >= 0) {
-    imgWrap.style.cursor = "pointer";
-    imgWrap.title = "点击查看大图 / 重新生成";
-    imgWrap.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const cur = arenaState.arenas[arenaState.current_idx];
-      if (!cur) return;
-      showCardModal({
-        image_id: cur.image_id,
-        visual_concept: cur.visual_concept,
-        rarity: cur.rarity,
-        title: cur.title,
-        description: cur.description,
-        tag: `凌云阶 · 第 ${cur.position} 阶`,
-        date: cur.unlocked_at || "",
-      });
-    });
-  }
+  // 整张卡片任何位置点击 → 弹天梯 modal（看历届）
+  // 从天梯 modal 里点单张图才弹"重新生成"
   card.addEventListener("click", openArenaModal);
 }
 
