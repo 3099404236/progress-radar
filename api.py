@@ -759,7 +759,6 @@ class API:
             ms_by_id = {m["id"]: m for m in ach.get("global", {}).get("milestones", [])}
 
             arenas = []
-            highest_unlocked_idx = -1
             for i, ao in enumerate(ARENA_ORDER):
                 slot = ms_by_id.get(ao["id"], {})
                 unlocked = bool(slot.get("unlocked_at"))
@@ -775,15 +774,26 @@ class API:
                     "unlocked_at": slot.get("unlocked_at"),
                     "position": i + 1,
                 })
-                if unlocked:
-                    highest_unlocked_idx = i
 
-            # 当前所在 arena = 已解锁中位置最高的；下一届 = 比它高一阶
-            current_idx = highest_unlocked_idx
-            next_idx = current_idx + 1 if current_idx + 1 < len(arenas) else None
+            # current = "最近一次解锁"（按 unlocked_at 取最新；主页中央展示这阶）
+            current_idx = -1
+            most_recent_ts = ""
+            for i, a in enumerate(arenas):
+                ts = a.get("unlocked_at") or ""
+                if a["unlocked"] and ts > most_recent_ts:
+                    most_recent_ts = ts
+                    current_idx = i
+
+            # next = 按门槛从低到高第一个未解锁（进度条目标）
+            next_idx = None
+            for i, a in enumerate(arenas):
+                if not a["unlocked"]:
+                    next_idx = i
+                    break
 
             if next_idx is not None:
-                from_t = arenas[current_idx]["threshold"] if current_idx >= 0 else 0
+                # 进度从"上一阶门槛"算起，没上一阶（next_idx=0）就从 0 算
+                from_t = arenas[next_idx - 1]["threshold"] if next_idx > 0 else 0
                 to_t = arenas[next_idx]["threshold"]
                 span = max(1, to_t - from_t)
                 progress = max(0.0, min(1.0, (cups - from_t) / span))
