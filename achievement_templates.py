@@ -57,7 +57,7 @@ GLOBAL_MILESTONE_TEMPLATES = [
     {"id": "g_first_evolve", "title": "破而后立",   "description": "首次接受阶段重构，敢于推翻自己",                 "rarity": "epic",
      "visual_concept": "old wooden bridge collapsing while new crystal bridge rises in same place"},
     {"id": "g_total_50",     "title": "五十里程",   "description": "五十条记录，已是认真追踪者",                     "rarity": "uncommon",
-     "visual_concept": "ancient stone milestone marker on weathered path, fifty carved upon it"},
+     "visual_concept": "a triumphant adventurer planting a bright golden banner on a grassy hilltop at sunrise, long winding trail with small flags marking the path on the slope behind them, hopeful warm dawn light, fantasy game illustration"},
     {"id": "g_total_200",    "title": "二百盈尺",   "description": "积累两百条，回望已是长卷",                       "rarity": "legendary",
      "visual_concept": "endless library scroll unrolling into the distance, golden calligraphy strokes"},
 ]
