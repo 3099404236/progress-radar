@@ -71,6 +71,7 @@ def _collect_chest_items(result):
             "rarity": u.get("rarity", "common"),
             "scope": u.get("scope", "dimension"),
             "image_id": u.get("image_id"),
+            "visual_concept": u.get("visual_concept", ""),
             "kind": "milestone",
         })
     ins = result.get("insight")
@@ -84,6 +85,7 @@ def _collect_chest_items(result):
                 "rarity": ins.get("rarity", "uncommon"),
                 "scope": "dimension",
                 "image_id": ins.get("image_id"),
+                "visual_concept": ins.get("visual_concept", ""),
                 "kind": "insight",
             })
     # multi action：每个 sub 的 insight 也要收
@@ -99,6 +101,7 @@ def _collect_chest_items(result):
                 "rarity": ins.get("rarity", "uncommon"),
                 "scope": "dimension",
                 "image_id": ins.get("image_id"),
+                "visual_concept": ins.get("visual_concept", ""),
                 "kind": "insight",
             })
     return items
@@ -766,6 +769,7 @@ class API:
                     "description": slot.get("description", ""),
                     "rarity": slot.get("rarity", "common"),
                     "image_id": slot.get("image_id", ""),
+                    "visual_concept": slot.get("visual_concept", ""),
                     "threshold": ao["threshold"],
                     "unlocked": unlocked,
                     "unlocked_at": slot.get("unlocked_at"),

@@ -194,7 +194,7 @@ let imagePollTimer = null;
 async function fetchCardImage(imageId, imgEl) {
   if (!imageId || imageFetching.has(imageId)) return;
   if (imageCache[imageId]) {
-    if (imgEl) imgEl.src = imageCache[imageId];
+    if (imgEl) { imgEl.src = imageCache[imageId]; imgEl.classList.add("loaded"); }
     return;
   }
   imageFetching.add(imageId);
@@ -203,15 +203,18 @@ async function fetchCardImage(imageId, imgEl) {
     imageFetching.delete(imageId);
     if (r.ready && r.data_url) {
       imageCache[imageId] = r.data_url;
-      // 找页面上所有等同 image_id 的 img 元素更新
-      document.querySelectorAll(`img[data-img-id="${imageId}"]`).forEach(el => {
-        el.src = r.data_url;
-        el.classList.add("loaded");
-      });
+      updateAllImageWith(imageId, r.data_url);
     }
   } catch (e) {
     imageFetching.delete(imageId);
   }
+}
+
+function updateAllImageWith(imageId, dataUrl) {
+  document.querySelectorAll(`img[data-img-id="${imageId}"]`).forEach(el => {
+    el.src = dataUrl;
+    el.classList.add("loaded");
+  });
 }
 
 function ensureImagePolling() {
@@ -642,20 +645,27 @@ function render() {
 }
 
 function openCardModal(cardEl) {
-  const iid = cardEl.dataset.cardId;
-  const vc = cardEl.dataset.cardVc;
-  const rarity = cardEl.dataset.cardRarity;
-  const titleEl = cardEl.querySelector(".ach-card-title");
-  const descEl = cardEl.querySelector(".ach-card-desc");
-  const dateEl = cardEl.querySelector(".ach-card-date");
-  const tagEl = cardEl.querySelector(".ach-card-tag");
-  const rarEl = cardEl.querySelector(".ach-card-rar");
+  showCardModal({
+    image_id: cardEl.dataset.cardId,
+    visual_concept: cardEl.dataset.cardVc,
+    rarity: cardEl.dataset.cardRarity,
+    title: cardEl.querySelector(".ach-card-title")?.textContent || "",
+    description: cardEl.querySelector(".ach-card-desc")?.textContent || "",
+    tag: cardEl.querySelector(".ach-card-tag")?.textContent || "",
+    rarText: cardEl.querySelector(".ach-card-rar")?.textContent || "",
+    date: cardEl.querySelector(".ach-card-date")?.textContent || "",
+  });
+}
 
-  const title = titleEl ? titleEl.textContent : "";
-  const desc = descEl ? descEl.textContent : "";
-  const date = dateEl ? dateEl.textContent : "";
-  const tag = tagEl ? tagEl.textContent : "";
-  const rarText = rarEl ? rarEl.textContent : "";
+function showCardModal(opts) {
+  const iid = opts.image_id || "";
+  const vc = opts.visual_concept || "";
+  const rarity = opts.rarity || "common";
+  const title = opts.title || "";
+  const desc = opts.description || "";
+  const date = opts.date || "";
+  const tag = opts.tag || "";
+  const rarText = opts.rarText || rarityLabel[rarity] || "寻常";
 
   const imgURL = imageCache[iid] || "";
   const modal = document.createElement("div");
@@ -697,6 +707,8 @@ function openCardModal(cardEl) {
         const r = JSON.parse(await window.pywebview.api.regenerate_card_image(iid, vc, rarity));
         if (r.status === "ok" && r.data_url) {
           imageCache[iid] = r.data_url;
+          // 主页 / 列表 / arena modal 里所有同 imageId 的 img 一起换
+          updateAllImageWith(iid, r.data_url);
           modal.querySelector(".card-modal-img").src = r.data_url;
           modal.querySelector(".card-modal-img").classList.add("loaded");
           const ld = modal.querySelector(".card-img-loading");
@@ -1141,7 +1153,28 @@ function animateArenaProgress() {
 
 function wireArenaCard() {
   const card = document.getElementById("arena-main-card");
-  if (card) card.addEventListener("click", openArenaModal);
+  if (!card) return;
+  // 中央卡面图区域单独点 → 大图 modal（带重新生成）；其他区域 → 天梯 modal
+  const imgWrap = card.querySelector(".arena-card-img-wrap");
+  if (imgWrap && arenaState && arenaState.current_idx >= 0) {
+    imgWrap.style.cursor = "pointer";
+    imgWrap.title = "点击查看大图 / 重新生成";
+    imgWrap.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const cur = arenaState.arenas[arenaState.current_idx];
+      if (!cur) return;
+      showCardModal({
+        image_id: cur.image_id,
+        visual_concept: cur.visual_concept,
+        rarity: cur.rarity,
+        title: cur.title,
+        description: cur.description,
+        tag: `凌云阶 · 第 ${cur.position} 阶`,
+        date: cur.unlocked_at || "",
+      });
+    });
+  }
+  card.addEventListener("click", openArenaModal);
 }
 
 function openArenaModal() {
@@ -1172,7 +1205,7 @@ function openArenaModal() {
       imgHTML = `<div class="arena-item-locked-img">${a.position}</div>`;
     }
 
-    body += `<div class="arena-item ${cls} rarity-${rar}">
+    body += `<div class="arena-item ${cls} rarity-${rar}" data-pos="${a.position}"${a.unlocked ? ' title="点击查看大图 / 重新生成卡面"' : ''}>
       <div class="arena-item-pos">#${a.position}</div>
       <div class="arena-item-img-wrap">${imgHTML}</div>
       <div class="arena-item-meat">
@@ -1213,15 +1246,29 @@ function openArenaModal() {
   document.addEventListener("keydown", function esc(e) {
     if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", esc); }
   });
-  // 加载图（命中 cache 也要加 loaded 触发 fade-in）
+  // 加载图（fetchCardImage 内部统一处理 cache 命中也加 loaded class）
   overlay.querySelectorAll("img[data-img-id]").forEach(img => {
-    const iid = img.dataset.imgId;
-    if (imageCache[iid]) {
-      img.src = imageCache[iid];
-      img.classList.add("loaded");
-    } else {
-      fetchCardImage(iid, img);
-    }
+    fetchCardImage(img.dataset.imgId, img);
+  });
+
+  // 点击已解锁的 arena item → 大图 modal（带重新生成）
+  overlay.querySelectorAll(".arena-item").forEach(el => {
+    const pos = parseInt(el.dataset.pos, 10);
+    const a = arenas.find(x => x.position === pos);
+    if (!a || !a.unlocked) return;
+    el.style.cursor = "pointer";
+    el.addEventListener("click", () => {
+      overlay.remove();
+      showCardModal({
+        image_id: a.image_id,
+        visual_concept: a.visual_concept,
+        rarity: a.rarity,
+        title: a.title,
+        description: a.description,
+        tag: `凌云阶 · 第 ${a.position} 阶`,
+        date: a.unlocked_at || "",
+      });
+    });
   });
 }
 
@@ -1620,6 +1667,22 @@ function openChestSequence(items) {
         aura.style.display = "none";
         cardWrap.innerHTML = renderRevealCard(item, cardUrl);
         cardWrap.style.display = "block";
+        // reveal card 点击 → 大图 modal（带重新生成卡面按钮）
+        const revealEl = cardWrap.querySelector(".reveal-card");
+        if (revealEl) {
+          revealEl.style.cursor = "pointer";
+          revealEl.title = "点击查看大图 / 重新生成卡面";
+          revealEl.addEventListener("click", () => {
+            showCardModal({
+              image_id: item.image_id,
+              visual_concept: item.visual_concept,
+              rarity: item.rarity,
+              title: item.title,
+              description: item.description,
+              tag: item.kind === "insight" ? "洞察" : (item.scope === "global" ? "全局" : "里程碑"),
+            });
+          });
+        }
         nextBtn.style.display = "inline-block";
         nextBtn.textContent = (idx >= items.length - 1) ? "完成" : `下一个 (${idx + 1}/${items.length})`;
         skipBtn.textContent = "关闭";

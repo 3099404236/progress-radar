@@ -133,6 +133,7 @@ def _check_dim(progress_data, ach_data, dim_id):
                 "title": slot["title"],
                 "description": slot["description"],
                 "rarity": slot["rarity"],
+                "visual_concept": slot.get("visual_concept", ""),
             })
     return newly
 
@@ -191,6 +192,7 @@ def _check_global(progress_data, ach_data):
                 "title": slot["title"],
                 "description": slot["description"],
                 "rarity": slot["rarity"],
+                "visual_concept": slot.get("visual_concept", ""),
             })
     return newly
 
